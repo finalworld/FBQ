@@ -1,4 +1,3 @@
-
 name: Build APK
 
 on:
@@ -20,20 +19,57 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Unpack project if needed
+        shell: bash
+        run: |
+          if ! find . -name gradlew -type f | grep -q .; then
+            ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" -type f | head -n 1)
+
+            if [ -z "$ZIP_FILE" ]; then
+              echo "ERROR: Hittade varken gradlew eller någon zip-fil."
+              find . -maxdepth 3 -type f
+              exit 1
+            fi
+
+            echo "Packar upp: $ZIP_FILE"
+            mkdir -p extracted-project
+            unzip -q "$ZIP_FILE" -d extracted-project
+          fi
+
+      - name: Find Android project
+        shell: bash
+        run: |
+          GRADLEW_FILE=$(find . -name gradlew -type f | head -n 1)
+
+          if [ -z "$GRADLEW_FILE" ]; then
+            echo "ERROR: Hittade ingen gradlew-fil efter uppackning."
+            find . -maxdepth 5 -type f
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$GRADLEW_FILE")
+          PROJECT_DIR=${PROJECT_DIR#./}
+
+          echo "Androidprojektet hittades i: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
       - name: Make Gradle executable
-        run: chmod +x gradlew
+        shell: bash
+        run: chmod +x "$PROJECT_DIR/gradlew"
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        shell: bash
+        run: |
+          cd "$PROJECT_DIR"
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Frasses-Bone-Quest-v0.001-fix8-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
