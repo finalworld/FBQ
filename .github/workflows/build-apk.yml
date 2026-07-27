@@ -32,51 +32,49 @@ jobs:
           ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" -type f | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: Hittade ingen zip-fil."
+            echo "Ingen zip-fil hittades."
             exit 1
           fi
 
-          echo "Packar upp: $ZIP_FILE"
-          mkdir -p extracted-project
+          mkdir extracted-project
           unzip -q "$ZIP_FILE" -d extracted-project
 
       - name: Find Android project
         shell: bash
         run: |
-          SETTINGS_FILE=$(find extracted-project \
-            \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
-            -type f | head -n 1)
+          SETTINGS=$(find extracted-project \( -name settings.gradle.kts -o -name settings.gradle \) | head -n 1)
 
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: Hittade inget Androidprojekt."
-            find extracted-project -maxdepth 5 -type f
+          if [ -z "$SETTINGS" ]; then
+            echo "Androidprojekt hittades inte."
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
 
-          echo "Androidprojekt hittat i: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+      - name: Remove local.properties
+        run: rm -f "$PROJECT_DIR/local.properties"
 
-      - name: Remove local Android Studio settings
-        shell: bash
-        run: |
-          rm -f "$PROJECT_DIR/local.properties"
-
-      - name: Set up Gradle 8.11.1
-        uses: gradle/actions/setup-gradle@v6
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.11.1"
+          gradle-version: 8.11.1
 
-      - name: Build debug APK
+      - name: Build APK
         shell: bash
         run: |
           cd "$PROJECT_DIR"
-          gradle assembleDebug --stacktrace --no-daemon
+          gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Rename APK
+        shell: bash
+        run: |
+          mv "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" \
+             "$PROJECT_DIR/app/build/outputs/apk/debug/Frasses_Bone_Quest_v0.001_fix10.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Frasses-Bone-Quest-v0.001-fix8-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          name: Frasses_Bone_Quest_v0.001_fix10
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/Frasses_Bone_Quest_v0.001_fix10.apk
           if-no-files-found: error
