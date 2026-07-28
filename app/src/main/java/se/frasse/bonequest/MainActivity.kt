@@ -1,0 +1,593 @@
+package se.frasse.bonequest
+
+import android.Manifest
+import android.app.Activity
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.BitmapFactory
+import android.graphics.PointF
+import android.graphics.Color
+import android.graphics.Paint
+import android.os.Bundle
+import android.view.View
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.Point
+import java.text.NumberFormat
+import java.util.Locale
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        hideNavigationBar()
+        MapLibre.getInstance(this)
+        setContent { FrasseBoneQuestApp() }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideNavigationBar()
+    }
+
+    private fun hideNavigationBar() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.navigationBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility =
+            window.decorView.systemUiVisibility or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+    }
+}
+
+@Composable
+private fun FrasseBoneQuestApp() {
+    val context = LocalContext.current
+    val repository = remember { GameRepository(context) }
+    val tracker = remember { LocationTracker(context) }
+    val scope = rememberCoroutineScope()
+
+    var permissionGranted by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
+    }
+    var player by remember { mutableStateOf<GeoPoint?>(null) }
+    var bones by remember { mutableStateOf(repository.loadBones()) }
+    var piles by remember { mutableStateOf(repository.loadPiles()) }
+    var boneCount by remember { mutableIntStateOf(repository.boneCount()) }
+    var loadingBones by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<String?>("Väntar på GPS…") }
+    var followPlayer by remember { mutableStateOf(true) }
+    var selectedBone by remember { mutableStateOf<Bone?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var profileOpen by remember { mutableStateOf(false) }
+    var collecting by remember { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        permissionGranted = it
+        if (!it) status = "GPS-behörighet behövs för att spela"
+    }
+
+    LaunchedEffect(Unit) {
+        if (!permissionGranted) permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+
+    LaunchedEffect(status, loadingBones) {
+        if (status != null && !loadingBones) {
+            delay(2_500)
+            status = null
+        }
+    }
+
+    DisposableEffect(permissionGranted) {
+        if (permissionGranted) {
+            tracker.start { location ->
+                val point = GeoPoint(location.latitude, location.longitude)
+                player = point
+                status = if (location.accuracy <= 25) "GPS klar" else "GPS noggrannhet ±${location.accuracy.toInt()} m"
+                val nearbyBoneCount = bones.count {
+                    distanceMeters(point.latitude, point.longitude, it.latitude, it.longitude) <= 3_500.0
+                }
+                if ((!repository.generatedNear(point) || nearbyBoneCount < 20) && !loadingBones) {
+                    loadingBones = true
+                    scope.launch {
+                        runCatching { OverpassClient.generateBones(point) }
+                            .onSuccess { generated ->
+                                if (generated.isNotEmpty()) {
+                                    bones = (bones + generated).distinctBy { it.id }
+                                    repository.saveBones(bones)
+                                    if (piles.isEmpty()) {
+                                        piles = generated.filterIndexed { index, _ -> index % 6 == 0 }.mapIndexed { index, b ->
+                                            DirtPile("pile-${b.id}", b.latitude, b.longitude, 10 + (index % 5) * 10, index % 5)
+                                        }
+                                        repository.savePiles(piles)
+                                    }
+                                    repository.markGenerated(point)
+                                    status = "${generated.size} ben placerade på stigar"
+                                } else status = "Inga tydliga gångstigar hittades här"
+                            }
+                            .onFailure { status = "Kunde inte hämta stigar – försök igen senare" }
+                        loadingBones = false
+                    }
+                }
+            }
+        }
+        onDispose { tracker.stop() }
+    }
+
+    val nearBone = remember(player, bones) {
+        val p = player ?: return@remember null
+        bones.minByOrNull { distanceMeters(p.latitude, p.longitude, it.latitude, it.longitude) }
+            ?.takeIf { distanceMeters(p.latitude, p.longitude, it.latitude, it.longitude) <= 25.0 }
+    }
+    LaunchedEffect(nearBone) { selectedBone = nearBone }
+
+    MaterialTheme(colorScheme = darkColorScheme()) {
+        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF08131B))) {
+            GameMap(
+                player = player,
+                bones = bones,
+                piles = piles,
+                followPlayer = followPlayer,
+                onManualMove = { followPlayer = false },
+                onBoneTapped = { selectedBone = it },
+                onPlayerTapped = { profileOpen = true },
+                onPileTapped = { pile ->
+                    val p = player
+                    val d = if (p == null) 9999.0 else distanceMeters(p.latitude,p.longitude,pile.latitude,pile.longitude)
+                    if (d <= 25.0) {
+                        val result = repository.openPile(pile.id)
+                        if (result.second == null) status = "Du behöver ${pile.cost} ben"
+                        else { piles = result.first; boneCount = repository.boneCount(); status = "Jordhögen gav +${boneValue(result.second!!.type)} ben" }
+                    } else status = "Jordhög • kostar ${pile.cost} ben • ${d.toInt()} m"
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+
+            TopHud(
+                count = boneCount,
+                onMenu = { menuOpen = true },
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 4.dp)
+            )
+
+            if (!followPlayer) {
+                FloatingActionButton(
+                    onClick = { followPlayer = true },
+                    modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(18.dp),
+                    containerColor = androidx.compose.ui.graphics.Color(0xFF213141)
+                ) { Text("◎", fontSize = 28.sp) }
+            }
+
+            selectedBone?.let { bone ->
+                val p = player
+                val distance = if (p == null) Double.MAX_VALUE else distanceMeters(p.latitude, p.longitude, bone.latitude, bone.longitude)
+                if (distance <= 25) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
+                            .padding(bottom = 22.dp)
+                            .width(286.dp)
+                            .aspectRatio(1177f / 408f)
+                            .clickable(enabled = !collecting) {
+                                collecting = true
+                                val p0 = player
+                                scope.launch {
+                                    val inRange = if (p0 == null) emptyList() else bones.filter { distanceMeters(p0.latitude,p0.longitude,it.latitude,it.longitude) <= 25.0 }
+                                    val result = repository.collectBones(inRange.map { it.id })
+                                    delay(450)
+                                    bones = result.first
+                                    boneCount = repository.boneCount()
+                                    selectedBone = null
+                                    status = if (result.second > 0) "+${result.second} ben" else "Någon hann ta benet före dig."
+                                    collecting = false
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.collect_bone_button),
+                            contentDescription = "Ta benet",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.FillBounds
+                        )
+                        Text(
+                            if (collecting) "SAMLAR…" else "TA BENET  •  +${boneValue(bone.type)}  •  ${distance.toInt()} m",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 18.sp,
+                            color = androidx.compose.ui.graphics.Color(0xFFFFE5A3)
+                        )
+                    }
+                }
+            }
+
+            val statusText = if (loadingBones) "Letar gångstigar…" else status
+            if (statusText != null) {
+                Surface(
+                    modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 68.dp),
+                    color = androidx.compose.ui.graphics.Color(0xB3141B20),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(statusText, Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 12.sp)
+                }
+            }
+        }
+
+        if (profileOpen) {
+            val st = repository.stats()
+            AlertDialog(onDismissRequest={profileOpen=false}, title={Text(st.displayName)}, text={
+                Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Text("Gått: ${"%.2f".format(st.totalKm)} km")
+                    Text("Samlade ben: ${st.totalBonesCollected}")
+                    Text("Öppnade jordhögar: ${st.totalDirtPilesOpened}")
+                    Text("Medlem sedan: ${java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date(st.memberSince))}")
+                }
+            }, confirmButton={TextButton(onClick={profileOpen=false}){Text("STÄNG")}})
+        }
+
+        if (menuOpen) {
+            AlertDialog(
+                onDismissRequest = { menuOpen = false },
+                title = { Text("Frasse’s Bone Quest") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Version 0.300")
+                        Text(if (SupabaseBackend.configured) "Supabase är konfigurerat" else "Supabase-nycklar saknas i gradle.properties", fontSize = 12.sp)
+                        Button(onClick = { if (SupabaseBackend.configured) SupabaseBackend.startGoogleLogin(context) else status = "Lägg in SUPABASE_URL och SUPABASE_ANON_KEY" }, modifier = Modifier.fillMaxWidth()) { Text("LOGGA IN MED GOOGLE") }
+                        Button(onClick = { menuOpen=false; profileOpen=true }, modifier = Modifier.fillMaxWidth()) { Text("MIN PROFIL") }
+                        Text("Serverläge förberett – P2P är helt borttaget.", fontSize = 13.sp)
+                        Text("Samlade ben: $boneCount", fontWeight = FontWeight.Bold)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { (context as? Activity)?.finishAffinity() }) { Text("STÄNG APPEN") }
+                },
+                dismissButton = { TextButton(onClick = { menuOpen = false }) { Text("TILLBAKA") } }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier) {
+    // Fix 12: fixed left/title and fixed bone counter. Only the plain frame strip stretches.
+    // The paw has been removed from the HUD; it only represents the player on the map.
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val leftRatio = 1210f / 285f
+        val rightRatio = 540f / 285f
+        val totalFixedRatio = leftRatio + rightRatio
+        val hudHeight = minOf(56.dp, (maxWidth - 10.dp) / totalFixedRatio)
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(hudHeight),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .aspectRatio(leftRatio)
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.hud_left),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.FillBounds
+                )
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(1f)
+                        .clickable(onClick = onMenu)
+                )
+            }
+
+            Image(
+                painter = painterResource(R.drawable.hud_middle),
+                contentDescription = null,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                contentScale = ContentScale.FillBounds
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .aspectRatio(rightRatio)
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.hud_right),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.FillBounds
+                )
+                Text(
+                    NumberFormat.getIntegerInstance(Locale.US).format(count),
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 18.dp, bottom = 1.dp),
+                    color = androidx.compose.ui.graphics.Color(0xFFFFD88A),
+                    fontWeight = FontWeight.Black,
+                    fontSize = when {
+                        count < 1_000 -> 25.sp
+                        count < 100_000 -> 21.sp
+                        count < 10_000_000 -> 18.sp
+                        else -> 15.sp
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GameMap(
+    player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, followPlayer: Boolean,
+    onManualMove: () -> Unit, onBoneTapped: (Bone) -> Unit,
+    onPlayerTapped: () -> Unit, onPileTapped: (DirtPile) -> Unit, modifier: Modifier
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var map by remember { mutableStateOf<MapLibreMap?>(null) }
+    var styleReady by remember { mutableStateOf(false) }
+    val latestBones by rememberUpdatedState(bones)
+    val latestBoneTap by rememberUpdatedState(onBoneTapped)
+    val latestPlayerTap by rememberUpdatedState(onPlayerTapped)
+    val latestPileTap by rememberUpdatedState(onPileTapped)
+    val latestPiles by rememberUpdatedState(piles)
+
+    val mapView = remember {
+        MapView(context).apply {
+            getMapAsync { libreMap ->
+                libreMap.cameraPosition = CameraPosition.Builder()
+                    .target(LatLng(59.51, 17.63))
+                    .zoom(13.0)
+                    .build()
+
+                libreMap.setStyle(Style.Builder().fromUri("asset://game_style.json")) { style ->
+                    installGameLayers(style, context)
+                    map = libreMap
+                    styleReady = true
+                }
+
+                libreMap.addOnCameraMoveStartedListener { reason ->
+                    if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
+                        onManualMove()
+                    }
+                }
+
+                libreMap.addOnMapClickListener { latLng ->
+                    val screenPoint: PointF = libreMap.projection.toScreenLocation(latLng)
+                    val feature = libreMap.queryRenderedFeatures(
+                        screenPoint,
+                        *(BONE_LAYER_IDS + PILE_LAYER_IDS + arrayOf(PLAYER_LAYER_ID))
+                    ).firstOrNull()
+                    val boneId = feature
+                        ?.properties()
+                        ?.get(BONE_ID_PROPERTY)
+                        ?.asString
+                    if (boneId != null) {
+                        latestBones.firstOrNull { it.id == boneId }?.let(latestBoneTap); true
+                    } else {
+                        val pileId = feature?.properties()?.get(PILE_ID_PROPERTY)?.asString
+                        if (pileId != null) { latestPiles.firstOrNull { it.id == pileId }?.let(latestPileTap); true }
+                        else if (feature != null) { latestPlayerTap(); true } else false
+                    }
+                }
+            }
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, mapView) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> mapView.onStart()
+                Lifecycle.Event.ON_RESUME -> mapView.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                Lifecycle.Event.ON_STOP -> mapView.onStop()
+                Lifecycle.Event.ON_DESTROY -> mapView.onDestroy()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        mapView.onCreate(null)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            mapView.onDestroy()
+        }
+    }
+
+    androidx.compose.ui.viewinterop.AndroidView(factory = { mapView }, modifier = modifier)
+
+    LaunchedEffect(map, styleReady, player, followPlayer) {
+        val m = map ?: return@LaunchedEffect
+        if (!styleReady) return@LaunchedEffect
+        val style = m.style ?: return@LaunchedEffect
+        val source = style.getSourceAs<GeoJsonSource>(PLAYER_SOURCE_ID) ?: return@LaunchedEffect
+        source.setGeoJson(playerFeatureCollection(player))
+
+        player?.let { p ->
+            if (followPlayer) {
+                m.animateCamera(
+                    CameraUpdateFactory.newLatLngZoom(LatLng(p.latitude, p.longitude), 16.2),
+                    700
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(map, styleReady, bones) {
+        val m = map ?: return@LaunchedEffect
+        if (!styleReady) return@LaunchedEffect
+        val style = m.style ?: return@LaunchedEffect
+        val source = style.getSourceAs<GeoJsonSource>(BONE_SOURCE_ID) ?: return@LaunchedEffect
+        source.setGeoJson(boneFeatureCollection(bones))
+    }
+
+    LaunchedEffect(map, styleReady, piles) {
+        val m = map ?: return@LaunchedEffect
+        if (!styleReady) return@LaunchedEffect
+        val source = m.style?.getSourceAs<GeoJsonSource>(PILE_SOURCE_ID) ?: return@LaunchedEffect
+        source.setGeoJson(pileFeatureCollection(piles))
+    }
+}
+
+private const val PLAYER_SOURCE_ID = "frasse-player-source"
+private const val PLAYER_LAYER_ID = "frasse-player-layer"
+private const val PLAYER_IMAGE_ID = "frasse-player-image"
+private const val BONE_SOURCE_ID = "frasse-bones-source"
+private const val PILE_SOURCE_ID = "frasse-piles-source"
+private const val PILE_ID_PROPERTY = "pileId"
+private val PILE_IMAGE_IDS = Array(5) { "frasse-pile-image-${it+1}" }
+private val PILE_LAYER_IDS = Array(5) { "frasse-pile-layer-${it+1}" }
+private const val BONE_ID_PROPERTY = "boneId"
+private const val BONE_TYPE_PROPERTY = "boneType"
+private val BONE_IMAGE_IDS = Array(12) { index -> "frasse-bone-image-${index + 1}" }
+private val BONE_LAYER_IDS = Array(12) { index -> "frasse-bones-layer-${index + 1}" }
+
+private fun installGameLayers(style: Style, context: android.content.Context) {
+    style.addImage(PLAYER_IMAGE_ID, pawBitmap())
+
+    val boneDrawables = intArrayOf(
+        R.drawable.bone_01, R.drawable.bone_02, R.drawable.bone_03,
+        R.drawable.bone_04, R.drawable.bone_05, R.drawable.bone_06,
+        R.drawable.bone_07, R.drawable.bone_08, R.drawable.bone_09,
+        R.drawable.bone_10, R.drawable.bone_11, R.drawable.bone_12
+    )
+    boneDrawables.forEachIndexed { index, drawableId ->
+        BitmapFactory.decodeResource(context.resources, drawableId)?.let { bitmap ->
+            style.addImage(BONE_IMAGE_IDS[index], bitmap)
+        }
+    }
+
+    if (style.getSource(PLAYER_SOURCE_ID) == null) {
+        style.addSource(GeoJsonSource(PLAYER_SOURCE_ID, FeatureCollection.fromFeatures(emptyArray<Feature>())))
+    }
+    if (style.getLayer(PLAYER_LAYER_ID) == null) {
+        style.addLayer(
+            SymbolLayer(PLAYER_LAYER_ID, PLAYER_SOURCE_ID).withProperties(
+                PropertyFactory.iconImage(PLAYER_IMAGE_ID),
+                PropertyFactory.iconAllowOverlap(true),
+                PropertyFactory.iconIgnorePlacement(true),
+                PropertyFactory.iconSize(0.72f)
+            )
+        )
+    }
+
+    if (style.getSource(BONE_SOURCE_ID) == null) {
+        style.addSource(GeoJsonSource(BONE_SOURCE_ID, FeatureCollection.fromFeatures(emptyArray<Feature>())))
+    }
+    BONE_LAYER_IDS.forEachIndexed { index, layerId ->
+        if (style.getLayer(layerId) == null) {
+            style.addLayerBelow(
+                SymbolLayer(layerId, BONE_SOURCE_ID)
+                    .withFilter(
+                        Expression.eq(
+                            Expression.get(BONE_TYPE_PROPERTY),
+                            Expression.literal(index)
+                        )
+                    )
+                    .withProperties(
+                        PropertyFactory.iconImage(BONE_IMAGE_IDS[index]),
+                        PropertyFactory.iconAllowOverlap(true),
+                        PropertyFactory.iconIgnorePlacement(true),
+                        PropertyFactory.iconSize(0.72f)
+                    ),
+                PLAYER_LAYER_ID
+            )
+        }
+    }
+    val pileDrawables = intArrayOf(R.drawable.dirt_pile_01,R.drawable.dirt_pile_02,R.drawable.dirt_pile_03,R.drawable.dirt_pile_04,R.drawable.dirt_pile_05)
+    pileDrawables.forEachIndexed { index, id -> BitmapFactory.decodeResource(context.resources,id)?.let { style.addImage(PILE_IMAGE_IDS[index],it) } }
+    if (style.getSource(PILE_SOURCE_ID)==null) style.addSource(GeoJsonSource(PILE_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
+    PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.72f)),PLAYER_LAYER_ID) }
+}
+
+private fun pileFeatureCollection(piles: List<DirtPile>): FeatureCollection = FeatureCollection.fromFeatures(piles.map { pile -> Feature.fromGeometry(Point.fromLngLat(pile.longitude,pile.latitude)).apply { addStringProperty(PILE_ID_PROPERTY,pile.id); addNumberProperty("pileType",pile.type.coerceIn(0,4)) } })
+
+private fun playerFeatureCollection(player: GeoPoint?): FeatureCollection {
+    if (player == null) return FeatureCollection.fromFeatures(emptyArray<Feature>())
+    return FeatureCollection.fromFeatures(
+        arrayOf(Feature.fromGeometry(Point.fromLngLat(player.longitude, player.latitude)))
+    )
+}
+
+private fun boneFeatureCollection(bones: List<Bone>): FeatureCollection {
+    val features = bones.map { bone ->
+        Feature.fromGeometry(Point.fromLngLat(bone.longitude, bone.latitude)).apply {
+            addStringProperty(BONE_ID_PROPERTY, bone.id)
+            // Stable random-looking sprite: the same saved bone keeps its look,
+            // while newly generated bones are evenly mixed across all 12 images.
+            addNumberProperty(BONE_TYPE_PROPERTY, Math.floorMod(bone.id.hashCode(), 12))
+        }
+    }
+    return FeatureCollection.fromFeatures(features)
+}
+
+private fun pawBitmap(): Bitmap {
+    val size = 112
+    val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val c = Canvas(b)
+    val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    p.color = Color.argb(90, 0, 180, 255)
+    c.drawCircle(56f, 59f, 50f, p)
+    p.color = Color.WHITE
+    c.drawCircle(56f, 60f, 34f, p)
+    p.color = Color.rgb(0, 105, 230)
+    c.drawOval(35f, 54f, 77f, 91f, p)
+    c.drawCircle(29f, 44f, 12f, p)
+    c.drawCircle(48f, 30f, 12f, p)
+    c.drawCircle(69f, 30f, 12f, p)
+    c.drawCircle(87f, 44f, 12f, p)
+    return b
+}
+
+private fun boneBitmap(context: android.content.Context): Bitmap {
+    val source = BitmapFactory.decodeResource(context.resources, R.drawable.bone_01)
+    return Bitmap.createScaledBitmap(source, 104, 72, false)
+}
