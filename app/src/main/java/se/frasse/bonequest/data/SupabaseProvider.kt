@@ -4,6 +4,7 @@ import android.content.Intent
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.FlowType
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.handleDeeplinks
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
@@ -30,9 +31,10 @@ object SupabaseProvider {
         }
     }
 
-    fun handleAuthDeepLink(intent: Intent) {
+    suspend fun handleAuthDeepLink(intent: Intent) {
         val client = clientOrNull ?: return
         _authCallbackError.value = null
+        client.auth.awaitInitialization()
         client.handleDeeplinks(
             intent = intent,
             onSessionSuccess = { _authCallbackError.value = null },

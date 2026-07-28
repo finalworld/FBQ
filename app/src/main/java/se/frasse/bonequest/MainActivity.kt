@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -59,14 +60,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
-        SupabaseProvider.handleAuthDeepLink(intent)
+        lifecycleScope.launch { SupabaseProvider.handleAuthDeepLink(intent) }
         setContent { FrasseAppRoot() }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        SupabaseProvider.handleAuthDeepLink(intent)
+        lifecycleScope.launch { SupabaseProvider.handleAuthDeepLink(intent) }
     }
 }
 
