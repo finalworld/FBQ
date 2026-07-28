@@ -83,6 +83,13 @@ begin
      or not has_function_privilege('authenticated','public.equip_marker(text)','EXECUTE') then
     raise exception 'Shop RPC privileges invalid';
   end if;
+  if has_table_privilege('authenticated','public.admin_users','SELECT')
+     or has_function_privilege('anon','public.admin_adjust_bones(uuid,bigint,text)','EXECUTE') then
+    raise exception 'Admin boundary privileges invalid';
+  end if;
+  if not has_function_privilege('authenticated','public.list_map_pois(double precision,double precision,double precision,double precision)','EXECUTE') then
+    raise exception 'Authenticated role cannot load map POIs';
+  end if;
 end $$;
 
 rollback;
