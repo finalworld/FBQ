@@ -82,7 +82,7 @@ fun FrasseAppRoot() {
             }
             is GateState.Ready -> {
                 StartWalkingModeIfEnabled()
-                GameScreen()
+                GameScreen(current.profile)
             }
             is GateState.Error -> MessageScreen(
                 stringResource(R.string.login_error),

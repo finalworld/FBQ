@@ -77,9 +77,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-internal fun GameScreen() {
+internal fun GameScreen(profile:SessionBootstrap) {
     val context = LocalContext.current
     val repository = remember { GameRepository(context) }
+    val worldRepository = remember { SupabaseProvider.clientOrNull?.let(::WorldRepository) }
     val tracker = remember { LocationTracker(context) }
     val scope = rememberCoroutineScope()
 
@@ -87,9 +88,12 @@ internal fun GameScreen() {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
     }
     var player by remember { mutableStateOf<GeoPoint?>(null) }
-    var bones by remember { mutableStateOf(repository.loadBones()) }
-    var piles by remember { mutableStateOf(repository.loadPiles()) }
-    var boneCount by remember { mutableIntStateOf(repository.boneCount()) }
+    var bones by remember { mutableStateOf(if (worldRepository==null) repository.loadBones() else emptyList()) }
+    var piles by remember { mutableStateOf(if (worldRepository==null) repository.loadPiles() else emptyList()) }
+    var boneCount by remember(profile.playerId) { mutableIntStateOf(
+        if (worldRepository==null) repository.boneCount()
+        else profile.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    ) }
     var loadingBones by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>("Väntar på GPS…") }
     var followPlayer by remember { mutableStateOf(true) }
@@ -97,6 +101,8 @@ internal fun GameScreen() {
     var menuOpen by remember { mutableStateOf(false) }
     var profileOpen by remember { mutableStateOf(false) }
     var collecting by remember { mutableStateOf(false) }
+    var lastWorldLoadAt by remember { mutableLongStateOf(0L) }
+    var lastWorldCenter by remember { mutableStateOf<GeoPoint?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionGranted = it
         if (!it) status = "GPS-behörighet behövs för att spela"
@@ -113,12 +119,44 @@ internal fun GameScreen() {
         }
     }
 
+    LaunchedEffect(worldRepository) {
+        val server = worldRepository ?: return@LaunchedEffect
+        server.subscribe()
+        server.worldChanges.collect {
+            val center = player ?: return@collect
+            runCatching { server.loadNearby(center) }.onSuccess {
+                bones=it.bones; piles=it.piles
+            }
+        }
+    }
+
     DisposableEffect(permissionGranted) {
         if (permissionGranted) {
             tracker.start { location ->
                 val point = GeoPoint(location.latitude, location.longitude)
                 player = point
                 status = if (location.accuracy <= 25) "GPS klar" else "GPS noggrannhet ±${location.accuracy.toInt()} m"
+                if (worldRepository!=null) {
+                    val needsReload=lastWorldCenter?.let {
+                        distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>100
+                    } ?: true
+                    scope.launch {
+                        runCatching { worldRepository.updatePresence(
+                            point,location.accuracy,location.bearing,location.speed.takeIf { location.hasSpeed() }
+                        ) }
+                        if (needsReload && System.currentTimeMillis()-lastWorldLoadAt>5_000) {
+                            loadingBones=true
+                            runCatching { worldRepository.loadNearby(point) }
+                                .onSuccess { snapshot ->
+                                    bones=snapshot.bones; piles=snapshot.piles
+                                    lastWorldCenter=point; lastWorldLoadAt=System.currentTimeMillis()
+                                }
+                                .onFailure { status="Kunde inte hämta spelvärlden" }
+                            loadingBones=false
+                        }
+                    }
+                    return@start
+                }
                 val nearbyBoneCount = bones.count {
                     distanceMeters(point.latitude, point.longitude, it.latitude, it.longitude) <= 3_500.0
                 }
@@ -170,9 +208,23 @@ internal fun GameScreen() {
                     val p = player
                     val d = if (p == null) 9999.0 else distanceMeters(p.latitude,p.longitude,pile.latitude,pile.longitude)
                     if (d <= 25.0) {
-                        val result = repository.openPile(pile.id)
-                        if (result.second == null) status = "Du behöver ${pile.cost} ben"
-                        else { piles = result.first; boneCount = repository.boneCount(); status = "Jordhögen gav +${boneValue(result.second!!.type)} ben" }
+                        if (worldRepository!=null) scope.launch {
+                            runCatching { worldRepository.openPile(pile.id) }.fold(
+                                onSuccess = { result ->
+                                    boneCount=result.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                                    piles=piles.filterNot { it.id==pile.id }
+                                    status="Jordhögen gav +${result.rewardValue} ben"
+                                },onFailure = { status=when {
+                                    it.message?.contains("INSUFFICIENT_BONES")==true -> "Du behöver ${pile.cost} ben"
+                                    it.message?.contains("PILE_ALREADY_CLAIMED")==true -> "En annan spelare hann före"
+                                    else -> "Kunde inte öppna jordhögen"
+                                } }
+                            )
+                        } else {
+                            val result = repository.openPile(pile.id)
+                            if (result.second == null) status = "Du behöver ${pile.cost} ben"
+                            else { piles = result.first; boneCount = repository.boneCount(); status = "Jordhögen gav +${boneValue(result.second!!.type)} ben" }
+                        }
                     } else status = "Jordhög • kostar ${pile.cost} ben • ${d.toInt()} m"
                 },
                 modifier = Modifier.fillMaxSize()
@@ -207,13 +259,27 @@ internal fun GameScreen() {
                                 collecting = true
                                 val p0 = player
                                 scope.launch {
-                                    val inRange = if (p0 == null) emptyList() else bones.filter { distanceMeters(p0.latitude,p0.longitude,it.latitude,it.longitude) <= 25.0 }
-                                    val result = repository.collectBones(inRange.map { it.id })
-                                    delay(450)
-                                    bones = result.first
-                                    boneCount = repository.boneCount()
+                                    if (worldRepository!=null) {
+                                        runCatching { worldRepository.collectNearbyBones() }.fold(
+                                            onSuccess = { rewards ->
+                                                val reward=rewards.sumOf { it.playerReward }
+                                                rewards.lastOrNull()?.let { boneCount=it.playerBalance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt() }
+                                                val ids=if (p0==null) emptySet() else bones.filter {
+                                                    distanceMeters(p0.latitude,p0.longitude,it.latitude,it.longitude)<=25
+                                                }.mapTo(mutableSetOf()) { it.id }
+                                                bones=bones.filterNot { it.id in ids }
+                                                status=if (rewards.maxOfOrNull { it.rewardedPlayers } ?: 1>1)
+                                                    "+$reward ben • flera spelare belönades" else "+$reward ben"
+                                            },onFailure = { status=if (it.message?.contains("NO_BONES_IN_RANGE")==true)
+                                                "Någon hann ta benet före dig." else "Kunde inte ta benet" }
+                                        )
+                                    } else {
+                                        val inRange = if (p0 == null) emptyList() else bones.filter { distanceMeters(p0.latitude,p0.longitude,it.latitude,it.longitude) <= 25.0 }
+                                        val result = repository.collectBones(inRange.map { it.id })
+                                        delay(450); bones=result.first; boneCount=repository.boneCount()
+                                        status=if (result.second>0) "+${result.second} ben" else "Någon hann ta benet före dig."
+                                    }
                                     selectedBone = null
-                                    status = if (result.second > 0) "+${result.second} ben" else "Någon hann ta benet före dig."
                                     collecting = false
                                 }
                             },
