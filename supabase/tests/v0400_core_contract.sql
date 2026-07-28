@@ -24,6 +24,33 @@ begin
 end $$;
 
 do $$
+declare total integer;
+begin
+  select count(*) into total from public.shop_items where main_category='Markörer' and active;
+  if total<>96 then raise exception 'Expected 96 launch markers, got %',total; end if;
+  if (select count(*) from public.shop_items where subcategory='Hundraser' and active)<>36
+    or (select count(*) from public.shop_items where subcategory='Hundleksaker' and active)<>20
+    or (select count(*) from public.shop_items where subcategory='Tassar' and active)<>12
+    or (select count(*) from public.shop_items where subcategory='Halsband och namnbrickor' and active)<>10
+    or (select count(*) from public.shop_items where subcategory='Koppel och utrustning' and active)<>8
+    or (select count(*) from public.shop_items where subcategory='Emblem och övrigt' and active)<>10 then
+    raise exception 'Marker category totals differ from specification';
+  end if;
+  if (select count(*) from public.shop_items where rarity='common' and active)<>30
+    or (select count(*) from public.shop_items where rarity='uncommon' and active)<>24
+    or (select count(*) from public.shop_items where rarity='rare' and active)<>18
+    or (select count(*) from public.shop_items where rarity='epic' and active)<>14
+    or (select count(*) from public.shop_items where rarity='legendary' and active)<>8
+    or (select count(*) from public.shop_items where rarity='mythic' and active)<>1 then
+    raise exception 'Marker rarity totals differ from specification';
+  end if;
+  if not exists(select 1 from public.shop_items
+    where id='marker_frasse_mythic' and price=10000 and rarity='mythic') then
+    raise exception 'Mythic Frasse marker missing or incorrectly priced';
+  end if;
+end $$;
+
+do $$
 begin
   if has_table_privilege('authenticated','public.profiles','UPDATE') then
     raise exception 'Authenticated may directly update profiles';
@@ -51,6 +78,10 @@ begin
   if has_function_privilege('anon','public.list_flocks(text)','EXECUTE')
      or not has_function_privilege('authenticated','public.get_my_flocks()','EXECUTE') then
     raise exception 'Flock RPC privileges invalid';
+  end if;
+  if has_function_privilege('anon','public.buy_shop_item(uuid,text,uuid)','EXECUTE')
+     or not has_function_privilege('authenticated','public.equip_marker(text)','EXECUTE') then
+    raise exception 'Shop RPC privileges invalid';
   end if;
 end $$;
 
