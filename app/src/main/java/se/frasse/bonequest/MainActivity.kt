@@ -214,7 +214,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     val distance = player?.let { p ->
                         distanceMeters(p.latitude, p.longitude, bone.latitude, bone.longitude).toInt()
                     }
-                    status = "Ben • värt ${boneValue(bone.type)} • ${distance?.let { "$it m" } ?: "okänt avstånd"}"
+                    status = "BEN  •  VÄRDE ${boneValue(bone.type)}  •  ${distance?.let { "$it M" } ?: "OKÄNT AVSTÅND"}"
                 },
                 onPlayerTapped = { profileOpen = true },
                 onPileTapped = { pile ->
@@ -312,10 +312,16 @@ internal fun GameScreen(profile:SessionBootstrap) {
             if (statusText != null && nearBone==null) {
                 Surface(
                     modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=10.dp),
-                    color = androidx.compose.ui.graphics.Color(0xB3141B20),
+                    color = androidx.compose.ui.graphics.Color(0xF2171A1C),
                     shape = RoundedCornerShape(4.dp)
                 ) {
-                    Text(statusText, Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 12.sp)
+                    Text(
+                        statusText,
+                        Modifier.padding(horizontal = 15.dp, vertical = 9.dp),
+                        color = androidx.compose.ui.graphics.Color(0xFFFFD78D),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Black
+                    )
                 }
             }
         }
@@ -363,17 +369,18 @@ private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier
                 contentAlignment=Alignment.Center
             ) { Text("☰",fontSize=30.sp,color=androidx.compose.ui.graphics.Color(0xFFFFE8BE)) }
             Box(Modifier.width(1.dp).fillMaxHeight(.72f).background(androidx.compose.ui.graphics.Color(0xFF8B642E)))
-            Text(
-                "FRASSE’S BONE QUEST",modifier=Modifier.weight(1f).padding(horizontal=10.dp),
-                color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,
-                fontSize=17.sp,maxLines=1
+            Image(
+                painter=painterResource(R.drawable.hud_logo),
+                contentDescription="Frasse’s Bone Quest",
+                modifier=Modifier.weight(1f).fillMaxHeight().padding(horizontal=10.dp,vertical=8.dp),
+                contentScale=ContentScale.Fit
             )
             Text(
                 NumberFormat.getIntegerInstance(Locale.forLanguageTag("sv-SE")).format(count),
-                modifier=Modifier.widthIn(min=72.dp,max=132.dp).padding(start=8.dp),
+                modifier=Modifier.widthIn(min=72.dp,max=132.dp).padding(end=5.dp),
                 color=androidx.compose.ui.graphics.Color(0xFFFFE8BE),fontWeight=FontWeight.Black,
                 fontSize=when { count<1_000_000->21.sp; count<100_000_000->17.sp; else->14.sp },
-                maxLines=1,textAlign=TextAlign.Start
+                maxLines=1,textAlign=TextAlign.End
             )
             Image(
                 painter=painterResource(R.drawable.bone_01),contentDescription=null,
