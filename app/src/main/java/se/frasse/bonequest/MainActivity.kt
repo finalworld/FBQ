@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.BitmapFactory
 import android.graphics.PointF
+import android.graphics.RectF
 import android.graphics.Color
 import android.graphics.Paint
 import android.os.Bundle
@@ -208,7 +209,13 @@ internal fun GameScreen(profile:SessionBootstrap) {
                         }
                     }
                 },
-                onBoneTapped = { selectedBone = it },
+                onBoneTapped = { bone ->
+                    selectedBone = bone
+                    val distance = player?.let { p ->
+                        distanceMeters(p.latitude, p.longitude, bone.latitude, bone.longitude).toInt()
+                    }
+                    status = "Ben • värt ${boneValue(bone.type)} • ${distance?.let { "$it m" } ?: "okänt avstånd"}"
+                },
                 onPlayerTapped = { profileOpen = true },
                 onPileTapped = { pile ->
                     val p = player
@@ -438,8 +445,12 @@ private fun GameMap(
 
                 libreMap.addOnMapClickListener { latLng ->
                     val screenPoint: PointF = libreMap.projection.toScreenLocation(latLng)
+                    val hitArea = RectF(
+                        screenPoint.x - 28f, screenPoint.y - 28f,
+                        screenPoint.x + 28f, screenPoint.y + 28f
+                    )
                     val feature = libreMap.queryRenderedFeatures(
-                        screenPoint,
+                        hitArea,
                         *(BONE_LAYER_IDS + PILE_LAYER_IDS + arrayOf(PLAYER_LAYER_ID))
                     ).firstOrNull()
                     val boneId = feature
