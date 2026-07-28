@@ -5,7 +5,6 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.FlowType
 import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.auth.handleDeeplinks
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.realtime.Realtime
@@ -33,18 +32,31 @@ object SupabaseProvider {
 
     suspend fun handleAuthDeepLink(intent: Intent) {
         val client = clientOrNull ?: return
+        val data = intent.data ?: return
+        if (data.scheme != "frassesbonequest" || data.host != "login-callback") return
         _authCallbackError.value = null
-        client.auth.awaitInitialization()
-        client.handleDeeplinks(
-            intent = intent,
-            onSessionSuccess = { _authCallbackError.value = null },
-            onError = { error ->
-                _authCallbackError.value = error.message
-                    ?.takeIf(String::isNotBlank)
-                    ?: error::class.simpleName
-                    ?: "Okänt fel vid Google-inloggningen"
-            }
-        )
+        val providerError = data.getQueryParameter("error_description")
+            ?: data.getQueryParameter("error")
+        if (!providerError.isNullOrBlank()) {
+            _authCallbackError.value = providerError
+            return
+        }
+        val code = data.getQueryParameter("code")
+        if (code.isNullOrBlank()) {
+            _authCallbackError.value = "Google återvände till appen utan en inloggningskod."
+            return
+        }
+        runCatching {
+            client.auth.awaitInitialization()
+            client.auth.exchangeCodeForSession(code)
+        }.onSuccess {
+            _authCallbackError.value = null
+        }.onFailure { error ->
+            _authCallbackError.value = error.message
+                ?.takeIf(String::isNotBlank)
+                ?: error::class.simpleName
+                ?: "Okänt fel vid Google-inloggningen"
+        }
     }
 
     fun clearAuthCallbackError() {
