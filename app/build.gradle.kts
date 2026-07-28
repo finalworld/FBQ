@@ -12,8 +12,8 @@ android {
         applicationId = "se.frasse.bonequest"
         minSdk = 26
         targetSdk = 35
-        versionCode = 300
-        versionName = "0.300"
+        versionCode = 400
+        versionName = "0.400"
     }
 
     buildFeatures { compose = true; buildConfig = true }
