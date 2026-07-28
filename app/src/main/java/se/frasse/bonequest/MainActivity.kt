@@ -2,6 +2,7 @@ package se.frasse.bonequest
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -10,7 +11,6 @@ import android.graphics.PointF
 import android.graphics.Color
 import android.graphics.Paint
 import android.os.Bundle
-import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,13 +33,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import io.github.jan.supabase.auth.handleDeeplinks
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -60,33 +60,24 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        hideNavigationBar()
         MapLibre.getInstance(this)
-        setContent { FrasseBoneQuestApp() }
-    }
-
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) hideNavigationBar()
-    }
-
-    private fun hideNavigationBar() {
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            hide(WindowInsetsCompat.Type.navigationBars())
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        SupabaseProvider.clientOrNull?.let { client ->
+            lifecycleScope.launch { client.handleDeeplinks(intent) }
         }
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility =
-            window.decorView.systemUiVisibility or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        setContent { FrasseAppRoot() }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        SupabaseProvider.clientOrNull?.let { client ->
+            lifecycleScope.launch { client.handleDeeplinks(intent) }
+        }
     }
 }
 
 @Composable
-private fun FrasseBoneQuestApp() {
+internal fun GameScreen() {
     val context = LocalContext.current
     val repository = remember { GameRepository(context) }
     val tracker = remember { LocationTracker(context) }
@@ -274,9 +265,7 @@ private fun FrasseBoneQuestApp() {
                 title = { Text("Frasse’s Bone Quest") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Version 0.300")
-                        Text(if (SupabaseBackend.configured) "Supabase är konfigurerat" else "Supabase-nycklar saknas i gradle.properties", fontSize = 12.sp)
-                        Button(onClick = { if (SupabaseBackend.configured) SupabaseBackend.startGoogleLogin(context) else status = "Lägg in SUPABASE_URL och SUPABASE_ANON_KEY" }, modifier = Modifier.fillMaxWidth()) { Text("LOGGA IN MED GOOGLE") }
+                        Text("Version 0.400")
                         Button(onClick = { menuOpen=false; profileOpen=true }, modifier = Modifier.fillMaxWidth()) { Text("MIN PROFIL") }
                         Text("Serverläge förberett – P2P är helt borttaget.", fontSize = 13.sp)
                         Text("Samlade ben: $boneCount", fontWeight = FontWeight.Bold)
