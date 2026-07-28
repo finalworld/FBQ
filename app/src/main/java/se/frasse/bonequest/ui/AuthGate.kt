@@ -14,8 +14,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import se.frasse.bonequest.walking.WalkingPreferences
+import se.frasse.bonequest.walking.WalkingServiceController
 
 private val FrasseCharcoal = Color(0xFF171A1C)
 private val FrasseGold = Color(0xFFD9A441)
@@ -76,13 +80,24 @@ fun FrasseAppRoot() {
                     onFailure = { state = GateState.Error(it.message.orEmpty()) }
                 ) }
             }
-            is GateState.Ready -> GameScreen()
+            is GateState.Ready -> {
+                StartWalkingModeIfEnabled()
+                GameScreen()
+            }
             is GateState.Error -> MessageScreen(
                 stringResource(R.string.login_error),
                 current.message.ifBlank { stringResource(R.string.login_error) },
                 stringResource(R.string.login_google)
             ) { state = GateState.SignedOut }
         }
+    }
+}
+
+@Composable
+private fun StartWalkingModeIfEnabled() {
+    val context=LocalContext.current
+    LaunchedEffect(Unit) {
+        if (WalkingPreferences(context).enabled.first()) WalkingServiceController.start(context)
     }
 }
 

@@ -3,12 +3,20 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
         android:label="@string/app_name"
         android:theme="@style/Theme.FrassesBoneQuest"
         android:usesCleartextTraffic="false">
+        <service
+            android:name=".walking.WalkingLocationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

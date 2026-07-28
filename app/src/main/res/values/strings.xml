@@ -11,4 +11,8 @@
     <string name="profile_name_continue">Börja spela</string>
     <string name="backend_missing_title">Spelet behöver anslutas</string>
     <string name="backend_missing_body">Supabase-adress och publik nyckel saknas i den här testversionen.</string>
+    <string name="walking_channel_name">Promenadläge</string>
+    <string name="walking_notification_title">Frasses promenadläge</string>
+    <string name="walking_notification_distance">Promenerat: %1$s km</string>
+    <string name="walking_notification_stop">Avsluta promenad</string>
 </resources>
