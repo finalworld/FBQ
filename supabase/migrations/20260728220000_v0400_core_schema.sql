@@ -24,6 +24,15 @@ create table if not exists public.profiles (
 );
 
 alter table public.profiles
+  add column if not exists display_name text not null default 'Frassevän',
+  add column if not exists bone_count bigint not null default 0,
+  add column if not exists total_meters bigint not null default 0,
+  add column if not exists total_bones bigint not null default 0,
+  add column if not exists total_piles bigint not null default 0,
+  add column if not exists home_lat double precision,
+  add column if not exists home_lon double precision,
+  add column if not exists name_changed_at timestamptz,
+  add column if not exists updated_at timestamptz not null default now(),
   add column if not exists created_at timestamptz not null default now(),
   add column if not exists onboarding_complete boolean not null default false,
   add column if not exists active_marker_id text not null default 'marker_default_paw',
