@@ -41,6 +41,10 @@ begin
   if not has_function_privilege('authenticated','public.collect_nearby_bones()','EXECUTE') then
     raise exception 'Authenticated role cannot collect bones';
   end if;
+  if has_function_privilege('anon','public.open_dirt_pile(uuid)','EXECUTE')
+     or has_function_privilege('anon','public.spin_home_slot(uuid,smallint)','EXECUTE') then
+    raise exception 'Anonymous role can use economy RPCs';
+  end if;
 end $$;
 
 rollback;

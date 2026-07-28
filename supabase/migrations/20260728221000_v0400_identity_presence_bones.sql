@@ -19,6 +19,18 @@ begin
 end $cleanup$;
 drop function if exists public.keep_respawning_items_active() cascade;
 
+-- The prototype RPC return type/signature varied during manual setup. Drop all
+-- overloads by identity before creating the locked 0.400 contract.
+do $cleanup$
+declare proc regprocedure;
+begin
+  for proc in
+    select p.oid::regprocedure from pg_proc p
+    join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' and p.proname='collect_nearby_bones'
+  loop execute format('drop function %s cascade',proc); end loop;
+end $cleanup$;
+
 create or replace function private.normalize_game_name(raw_name text)
 returns text language sql immutable set search_path=''
 as $$
@@ -275,8 +287,7 @@ begin
   end if;
 end $$;
 
--- API function permissions are explicit. Prototype overloads are replaced.
-drop function if exists public.collect_nearby_bones(double precision,double precision) cascade;
+-- API function permissions are explicit.
 revoke execute on function public.complete_profile(text) from public,anon;
 revoke execute on function public.change_display_name(text) from public,anon;
 revoke execute on function public.update_presence(double precision,double precision,real,real,real,boolean) from public,anon;
