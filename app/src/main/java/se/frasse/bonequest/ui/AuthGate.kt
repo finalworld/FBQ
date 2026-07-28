@@ -67,6 +67,12 @@ fun FrasseAppRoot() {
             }
         }
 
+        LaunchedEffect(Unit) {
+            SupabaseProvider.authCallbackError.collect { message ->
+                if (!message.isNullOrBlank()) state = GateState.Error(message)
+            }
+        }
+
         LaunchedEffect(state) {
             if (state == GateState.Loading) {
                 delay(20_000)
@@ -79,6 +85,7 @@ fun FrasseAppRoot() {
         when (val current = state) {
             GateState.Loading -> LoadingScreen()
             GateState.SignedOut -> LoginScreen {
+                SupabaseProvider.clearAuthCallbackError()
                 state = GateState.Loading
                 scope.launch { runCatching { repository.signInWithGoogle() }
                     .onFailure { state = GateState.Error(it.message.orEmpty()) } }

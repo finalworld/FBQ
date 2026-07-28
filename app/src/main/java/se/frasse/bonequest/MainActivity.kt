@@ -33,13 +33,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import io.github.jan.supabase.auth.handleDeeplinks
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -61,18 +59,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
-        SupabaseProvider.clientOrNull?.let { client ->
-            lifecycleScope.launch { client.handleDeeplinks(intent) }
-        }
+        SupabaseProvider.handleAuthDeepLink(intent)
         setContent { FrasseAppRoot() }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        SupabaseProvider.clientOrNull?.let { client ->
-            lifecycleScope.launch { client.handleDeeplinks(intent) }
-        }
+        SupabaseProvider.handleAuthDeepLink(intent)
     }
 }
 
