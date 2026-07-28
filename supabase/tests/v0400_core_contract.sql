@@ -35,6 +35,9 @@ begin
   if has_table_privilege('authenticated','public.flocks','UPDATE') then
     raise exception 'Authenticated may directly mutate flock economy';
   end if;
+  if has_table_privilege('authenticated','public.flocks','SELECT') then
+    raise exception 'Authenticated can bypass safe flock projections';
+  end if;
   if has_function_privilege('anon','public.collect_nearby_bones()','EXECUTE') then
     raise exception 'Anonymous role can collect bones';
   end if;
@@ -44,6 +47,10 @@ begin
   if has_function_privilege('anon','public.open_dirt_pile(uuid)','EXECUTE')
      or has_function_privilege('anon','public.spin_home_slot(uuid,smallint)','EXECUTE') then
     raise exception 'Anonymous role can use economy RPCs';
+  end if;
+  if has_function_privilege('anon','public.list_flocks(text)','EXECUTE')
+     or not has_function_privilege('authenticated','public.get_my_flocks()','EXECUTE') then
+    raise exception 'Flock RPC privileges invalid';
   end if;
 end $$;
 
