@@ -1,0 +1,12 @@
+-- Frasse's Bone Quest: run in Supabase SQL editor.
+create extension if not exists pgcrypto;
+create table if not exists profiles (id uuid primary key references auth.users on delete cascade, display_name text not null default 'Frassevän', bone_count bigint not null default 0, total_meters bigint not null default 0, total_bones bigint not null default 0, total_piles bigint not null default 0, home_lat double precision, home_lon double precision, name_changed_at timestamptz, updated_at timestamptz default now());
+create table if not exists world_bones (id uuid primary key default gen_random_uuid(), latitude double precision not null, longitude double precision not null, bone_type int not null check (bone_type between 0 and 11), active boolean not null default true, respawn_at timestamptz, created_at timestamptz default now());
+create table if not exists dirt_piles (id uuid primary key default gen_random_uuid(), latitude double precision not null, longitude double precision not null, pile_type int not null default 0, cost int not null default 10, active boolean not null default true, respawn_at timestamptz, created_at timestamptz default now());
+create table if not exists player_presence (player_id uuid primary key references auth.users on delete cascade, latitude double precision not null, longitude double precision not null, heading real default 0, moved_at timestamptz default now(), updated_at timestamptz default now());
+alter table profiles enable row level security; alter table world_bones enable row level security; alter table dirt_piles enable row level security; alter table player_presence enable row level security;
+create policy "profiles own read" on profiles for select using (auth.uid()=id); create policy "profiles own update" on profiles for update using (auth.uid()=id);
+create policy "world readable" on world_bones for select to authenticated using (true); create policy "piles readable" on dirt_piles for select to authenticated using (true); create policy "presence readable" on player_presence for select to authenticated using (updated_at > now()-interval '5 minutes');
+create policy "presence own" on player_presence for all using (auth.uid()=player_id) with check (auth.uid()=player_id);
+-- Collection/opening must be done through SECURITY DEFINER RPC functions in production so radius, active state,
+-- simultaneous collectors, reward, respawn and anti-cheat are decided atomically by the server.

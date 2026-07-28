@@ -1,0 +1,25 @@
+# Android and Gradle build output
+.gradle/
+build/
+**/build/
+
+# Local SDK paths and machine-specific configuration
+local.properties
+
+# Secrets and signing material
+*.jks
+*.keystore
+keystore.properties
+secrets.properties
+.env
+.env.*
+
+# IDE and operating-system files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp

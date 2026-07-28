@@ -1,0 +1,14 @@
+Frasse's Bone Quest v0.200
+
+- Version updated to 0.200 / versionCode 200.
+- P2P/Nearby Connections removed completely.
+- Nearby dependency removed.
+- Bluetooth/Wi-Fi Nearby permissions removed.
+- NearbyWalkManager removed.
+- Exact supplied Collect Bone button added as transparent PNG.
+- Collect action now uses the supplied button artwork.
+- HUD fix12 structure retained: fixed left/right caps, stretchable center.
+- Overpass identifiers and User-Agent updated to v0.200.
+- Existing 25 m collect radius retained.
+
+Supabase/Google login is not activated in this package because project credentials/config files were not included in the uploaded ZIP.
