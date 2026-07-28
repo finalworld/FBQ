@@ -25,7 +25,10 @@ data class SessionBootstrap(
 class AuthRepository(private val client: SupabaseClient) {
     val sessionStatus: Flow<SessionStatus> = client.auth.sessionStatus
 
-    suspend fun signInWithGoogle() = client.auth.signInWith(Google)
+    suspend fun signInWithGoogle() = client.auth.signInWith(
+        provider = Google,
+        redirectUrl = "frassesbonequest://login-callback"
+    )
     suspend fun signOut() = client.auth.signOut()
 
     suspend fun loadBootstrap(): SessionBootstrap =

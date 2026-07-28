@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import se.frasse.bonequest.walking.WalkingPreferences
 import se.frasse.bonequest.walking.WalkingServiceController
@@ -62,6 +63,15 @@ fun FrasseAppRoot() {
                     )
                     is SessionStatus.NotAuthenticated -> GateState.SignedOut
                     is SessionStatus.RefreshFailure -> GateState.SignedOut
+                }
+            }
+        }
+
+        LaunchedEffect(state) {
+            if (state == GateState.Loading) {
+                delay(20_000)
+                if (state == GateState.Loading) {
+                    state = GateState.Error("Inloggningen tog för lång tid. Stäng webbläsaren och försök igen.")
                 }
             }
         }
