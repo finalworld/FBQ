@@ -233,7 +233,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             TopHud(
                 count = boneCount,
                 onMenu = { menuOpen = true },
-                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 4.dp)
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding()
             )
 
             if (!followPlayer) {
@@ -253,8 +253,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
                             .align(Alignment.BottomCenter)
                             .navigationBarsPadding()
                             .padding(bottom = 22.dp)
-                            .width(286.dp)
-                            .aspectRatio(1177f / 408f)
+                            .widthIn(max=340.dp)
+                            .fillMaxWidth(.88f)
+                            .height(62.dp)
                             .clickable(enabled = !collecting) {
                                 collecting = true
                                 val p0 = player
@@ -285,28 +286,21 @@ internal fun GameScreen(profile:SessionBootstrap) {
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Image(
-                            painter = painterResource(R.drawable.collect_bone_button),
-                            contentDescription = "Ta benet",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.FillBounds
-                        )
-                        Text(
-                            if (collecting) "SAMLAR…" else "TA BENET  •  +${boneValue(bone.type)}  •  ${distance.toInt()} m",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 18.sp,
-                            color = androidx.compose.ui.graphics.Color(0xFFFFE5A3)
+                        ActionButtonContent(
+                            iconDrawable=R.drawable.bone_01,
+                            label=if (collecting) "SAMLAR…" else "TA BENET",
+                            detail="+${boneValue(bone.type)}  •  ${distance.toInt()} m"
                         )
                     }
                 }
             }
 
             val statusText = if (loadingBones) "Letar gångstigar…" else status
-            if (statusText != null) {
+            if (statusText != null && nearBone==null) {
                 Surface(
-                    modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 68.dp),
+                    modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=10.dp),
                     color = androidx.compose.ui.graphics.Color(0xB3141B20),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(statusText, Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 12.sp)
                 }
@@ -348,75 +342,48 @@ internal fun GameScreen(profile:SessionBootstrap) {
 
 @Composable
 private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier) {
-    // Fix 12: fixed left/title and fixed bone counter. Only the plain frame strip stretches.
-    // The paw has been removed from the HUD; it only represents the player on the map.
-    BoxWithConstraints(modifier.fillMaxWidth()) {
-        val leftRatio = 1210f / 285f
-        val rightRatio = 540f / 285f
-        val totalFixedRatio = leftRatio + rightRatio
-        val hudHeight = minOf(56.dp, (maxWidth - 10.dp) / totalFixedRatio)
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(hudHeight),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    Box(modifier.fillMaxWidth().height(62.dp).background(androidx.compose.ui.graphics.Color(0xF2171A1C))) {
+        Row(Modifier.fillMaxSize(),verticalAlignment=Alignment.CenterVertically) {
             Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .aspectRatio(leftRatio)
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.hud_left),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.FillBounds
-                )
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .aspectRatio(1f)
-                        .clickable(onClick = onMenu)
-                )
-            }
-
-            Image(
-                painter = painterResource(R.drawable.hud_middle),
-                contentDescription = null,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                contentScale = ContentScale.FillBounds
+                Modifier.width(64.dp).fillMaxHeight().clickable(onClick=onMenu),
+                contentAlignment=Alignment.Center
+            ) { Text("☰",fontSize=30.sp,color=androidx.compose.ui.graphics.Color(0xFFFFE8BE)) }
+            Box(Modifier.width(1.dp).fillMaxHeight(.72f).background(androidx.compose.ui.graphics.Color(0xFF8B642E)))
+            Text(
+                "FRASSE’S BONE QUEST",modifier=Modifier.weight(1f).padding(horizontal=10.dp),
+                color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,
+                fontSize=17.sp,maxLines=1
             )
-
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .aspectRatio(rightRatio)
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.hud_right),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.FillBounds
-                )
-                Text(
-                    NumberFormat.getIntegerInstance(Locale.US).format(count),
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 18.dp, bottom = 1.dp),
-                    color = androidx.compose.ui.graphics.Color(0xFFFFD88A),
-                    fontWeight = FontWeight.Black,
-                    fontSize = when {
-                        count < 1_000 -> 25.sp
-                        count < 100_000 -> 21.sp
-                        count < 10_000_000 -> 18.sp
-                        else -> 15.sp
-                    }
-                )
-            }
+            Image(
+                painter=painterResource(R.drawable.bone_01),contentDescription=null,
+                modifier=Modifier.size(35.dp),contentScale=ContentScale.Fit
+            )
+            Text(
+                NumberFormat.getIntegerInstance(Locale.forLanguageTag("sv-SE")).format(count),
+                modifier=Modifier.widthIn(min=72.dp,max=132.dp).padding(end=12.dp),
+                color=androidx.compose.ui.graphics.Color(0xFFFFE8BE),fontWeight=FontWeight.Black,
+                fontSize=when { count<1_000_000->21.sp; count<100_000_000->17.sp; else->14.sp },
+                maxLines=1
+            )
         }
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp)
+            .background(androidx.compose.ui.graphics.Color(0xFFD9A441)))
+    }
+}
+
+@Composable
+private fun ActionButtonContent(iconDrawable:Int,label:String,detail:String) {
+    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xF2171A1C))) {
+        Row(Modifier.fillMaxSize(),verticalAlignment=Alignment.CenterVertically) {
+            Box(Modifier.width(62.dp).fillMaxHeight(),contentAlignment=Alignment.Center) {
+                Image(painterResource(iconDrawable),null,Modifier.size(43.dp),contentScale=ContentScale.Fit)
+            }
+            Box(Modifier.width(1.dp).fillMaxHeight(.68f).background(androidx.compose.ui.graphics.Color(0xFF8B642E)))
+            Text(label,Modifier.padding(start=16.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=18.sp)
+            Spacer(Modifier.weight(1f))
+            Text(detail,Modifier.padding(end=15.dp),color=androidx.compose.ui.graphics.Color(0xFFFFE8BE),fontWeight=FontWeight.Bold,fontSize=13.sp)
+        }
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp).background(androidx.compose.ui.graphics.Color(0xFFD9A441)))
     }
 }
 
@@ -616,9 +583,7 @@ private fun boneFeatureCollection(bones: List<Bone>): FeatureCollection {
     val features = bones.map { bone ->
         Feature.fromGeometry(Point.fromLngLat(bone.longitude, bone.latitude)).apply {
             addStringProperty(BONE_ID_PROPERTY, bone.id)
-            // Stable random-looking sprite: the same saved bone keeps its look,
-            // while newly generated bones are evenly mixed across all 12 images.
-            addNumberProperty(BONE_TYPE_PROPERTY, Math.floorMod(bone.id.hashCode(), 12))
+            addNumberProperty(BONE_TYPE_PROPERTY, bone.type.coerceIn(0,11))
         }
     }
     return FeatureCollection.fromFeatures(features)

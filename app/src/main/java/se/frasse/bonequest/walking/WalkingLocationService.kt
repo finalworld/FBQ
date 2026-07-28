@@ -106,7 +106,7 @@ class WalkingLocationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val stop=PendingIntent.getService(this,1,Intent(this,WalkingLocationService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val km=NumberFormat.getNumberInstance(Locale("sv","SE")).apply {
+        val km=NumberFormat.getNumberInstance(Locale.forLanguageTag("sv-SE")).apply {
             minimumFractionDigits=2; maximumFractionDigits=2
         }.format(sessionMeters/1000.0)
         return NotificationCompat.Builder(this,CHANNEL_ID)
