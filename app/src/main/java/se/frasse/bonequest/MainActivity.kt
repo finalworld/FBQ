@@ -30,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -238,7 +239,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             TopHud(
                 count = boneCount,
                 onMenu = { menuOpen = true },
-                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding()
+                modifier = Modifier.align(Alignment.TopCenter)
             )
 
             if (!followPlayer) {
@@ -347,7 +348,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
 
 @Composable
 private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().height(62.dp).background(androidx.compose.ui.graphics.Color(0xF2171A1C))) {
+    Box(modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFF171A1C))) {
+        Box(Modifier.statusBarsPadding().fillMaxWidth().height(62.dp)) {
         Row(Modifier.fillMaxSize(),verticalAlignment=Alignment.CenterVertically) {
             Box(
                 Modifier.width(64.dp).fillMaxHeight().clickable(onClick=onMenu),
@@ -359,20 +361,21 @@ private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier
                 color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,
                 fontSize=17.sp,maxLines=1
             )
-            Image(
-                painter=painterResource(R.drawable.bone_01),contentDescription=null,
-                modifier=Modifier.size(35.dp),contentScale=ContentScale.Fit
-            )
             Text(
                 NumberFormat.getIntegerInstance(Locale.forLanguageTag("sv-SE")).format(count),
-                modifier=Modifier.widthIn(min=72.dp,max=132.dp).padding(end=12.dp),
+                modifier=Modifier.widthIn(min=72.dp,max=132.dp).padding(start=8.dp),
                 color=androidx.compose.ui.graphics.Color(0xFFFFE8BE),fontWeight=FontWeight.Black,
                 fontSize=when { count<1_000_000->21.sp; count<100_000_000->17.sp; else->14.sp },
-                maxLines=1
+                maxLines=1,textAlign=TextAlign.Start
+            )
+            Image(
+                painter=painterResource(R.drawable.bone_01),contentDescription=null,
+                modifier=Modifier.padding(end=8.dp).size(35.dp),contentScale=ContentScale.Fit
             )
         }
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp)
             .background(androidx.compose.ui.graphics.Color(0xFFD9A441)))
+        }
     }
 }
 
@@ -535,7 +538,7 @@ private val POI_IMAGE_IDS = arrayOf("frasse-poi-dog-park", "frasse-poi-pet-shop"
 private val POI_LAYER_IDS = POI_TYPES.map { "frasse-poi-$it-layer" }.toTypedArray()
 
 private fun installGameLayers(style: Style, context: android.content.Context) {
-    style.addImage(PLAYER_IMAGE_ID, pawBitmap())
+    style.addImage(PLAYER_IMAGE_ID, defaultMarkerBitmap(context))
 
     val boneDrawables = intArrayOf(
         R.drawable.bone_01, R.drawable.bone_02, R.drawable.bone_03,
@@ -660,6 +663,16 @@ private fun pawBitmap(): Bitmap {
     c.drawCircle(69f, 30f, 12f, p)
     c.drawCircle(87f, 44f, 12f, p)
     return b
+}
+
+private fun defaultMarkerBitmap(context: android.content.Context): Bitmap {
+    val source = BitmapFactory.decodeResource(context.resources, R.drawable.marker_default_paw)
+    val side = minOf(source.width, source.height)
+    val cropSide = (side * 0.64f).toInt()
+    val left = (source.width - cropSide) / 2
+    val top = (source.height - cropSide) / 2
+    val cropped = Bitmap.createBitmap(source, left, top, cropSide, cropSide)
+    return Bitmap.createScaledBitmap(cropped, 112, 112, false)
 }
 
 private fun boneBitmap(context: android.content.Context): Bitmap {
