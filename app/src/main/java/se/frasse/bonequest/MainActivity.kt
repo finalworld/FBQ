@@ -90,6 +90,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var player by remember { mutableStateOf<GeoPoint?>(null) }
     var bones by remember { mutableStateOf(if (worldRepository==null) repository.loadBones() else emptyList()) }
     var piles by remember { mutableStateOf(if (worldRepository==null) repository.loadPiles() else emptyList()) }
+    var mapPois by remember { mutableStateOf(emptyList<MapPoi>()) }
     var boneCount by remember(profile.playerId) { mutableIntStateOf(
         if (worldRepository==null) repository.boneCount()
         else profile.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -200,8 +201,17 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 player = player,
                 bones = bones,
                 piles = piles,
+                pois = mapPois,
                 followPlayer = followPlayer,
                 onManualMove = { followPlayer = false },
+                onBoundsChanged = { bounds ->
+                    worldRepository?.let { server ->
+                        scope.launch {
+                            runCatching { server.mapPois(bounds) }
+                                .onSuccess { mapPois = it }
+                        }
+                    }
+                },
                 onBoneTapped = { selectedBone = it },
                 onPlayerTapped = { profileOpen = true },
                 onPileTapped = { pile ->
@@ -389,8 +399,8 @@ private fun ActionButtonContent(iconDrawable:Int,label:String,detail:String) {
 
 @Composable
 private fun GameMap(
-    player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, followPlayer: Boolean,
-    onManualMove: () -> Unit, onBoneTapped: (Bone) -> Unit,
+    player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, pois: List<MapPoi>, followPlayer: Boolean,
+    onManualMove: () -> Unit, onBoundsChanged: (MapBounds) -> Unit, onBoneTapped: (Bone) -> Unit,
     onPlayerTapped: () -> Unit, onPileTapped: (DirtPile) -> Unit, modifier: Modifier
 ) {
     val context = LocalContext.current
@@ -402,6 +412,7 @@ private fun GameMap(
     val latestPlayerTap by rememberUpdatedState(onPlayerTapped)
     val latestPileTap by rememberUpdatedState(onPileTapped)
     val latestPiles by rememberUpdatedState(piles)
+    val latestBoundsChanged by rememberUpdatedState(onBoundsChanged)
 
     val mapView = remember {
         MapView(context).apply {
@@ -421,6 +432,10 @@ private fun GameMap(
                     if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
                         onManualMove()
                     }
+                }
+                libreMap.addOnCameraIdleListener {
+                    val bounds = libreMap.projection.visibleRegion.latLngBounds
+                    latestBoundsChanged(MapBounds(bounds.latitudeSouth, bounds.longitudeWest, bounds.latitudeNorth, bounds.longitudeEast))
                 }
 
                 libreMap.addOnMapClickListener { latLng ->
@@ -497,6 +512,13 @@ private fun GameMap(
         val source = m.style?.getSourceAs<GeoJsonSource>(PILE_SOURCE_ID) ?: return@LaunchedEffect
         source.setGeoJson(pileFeatureCollection(piles))
     }
+
+    LaunchedEffect(map, styleReady, pois) {
+        val m = map ?: return@LaunchedEffect
+        if (!styleReady) return@LaunchedEffect
+        val source = m.style?.getSourceAs<GeoJsonSource>(POI_SOURCE_ID) ?: return@LaunchedEffect
+        source.setGeoJson(poiFeatureCollection(pois))
+    }
 }
 
 private const val PLAYER_SOURCE_ID = "frasse-player-source"
@@ -511,6 +533,11 @@ private const val BONE_ID_PROPERTY = "boneId"
 private const val BONE_TYPE_PROPERTY = "boneType"
 private val BONE_IMAGE_IDS = Array(12) { index -> "frasse-bone-image-${index + 1}" }
 private val BONE_LAYER_IDS = Array(12) { index -> "frasse-bones-layer-${index + 1}" }
+private const val POI_SOURCE_ID = "frasse-pois-source"
+private const val POI_TYPE_PROPERTY = "poiType"
+private val POI_TYPES = arrayOf("dog_park", "pet_shop", "veterinary", "grooming", "dog_wash")
+private val POI_IMAGE_IDS = arrayOf("frasse-poi-dog-park", "frasse-poi-pet-shop", "frasse-poi-veterinary", "frasse-poi-grooming", "frasse-poi-grooming")
+private val POI_LAYER_IDS = POI_TYPES.map { "frasse-poi-$it-layer" }.toTypedArray()
 
 private fun installGameLayers(style: Style, context: android.content.Context) {
     style.addImage(PLAYER_IMAGE_ID, pawBitmap())
@@ -568,9 +595,42 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
     pileDrawables.forEachIndexed { index, id -> BitmapFactory.decodeResource(context.resources,id)?.let { style.addImage(PILE_IMAGE_IDS[index],it) } }
     if (style.getSource(PILE_SOURCE_ID)==null) style.addSource(GeoJsonSource(PILE_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
     PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.72f)),PLAYER_LAYER_ID) }
+
+    val poiDrawables = intArrayOf(R.drawable.poi_dog_park, R.drawable.poi_pet_shop, R.drawable.poi_veterinary, R.drawable.poi_grooming)
+    poiDrawables.forEachIndexed { index, id ->
+        BitmapFactory.decodeResource(context.resources, id)?.let { style.addImage(POI_IMAGE_IDS[index], it) }
+    }
+    if (style.getSource(POI_SOURCE_ID) == null) {
+        style.addSource(GeoJsonSource(POI_SOURCE_ID, FeatureCollection.fromFeatures(emptyArray<Feature>())))
+    }
+    POI_LAYER_IDS.forEachIndexed { index, layerId ->
+        if (style.getLayer(layerId) == null) {
+            style.addLayerBelow(
+                SymbolLayer(layerId, POI_SOURCE_ID)
+                    .withFilter(Expression.eq(Expression.get(POI_TYPE_PROPERTY), Expression.literal(POI_TYPES[index])))
+                    .withProperties(
+                        PropertyFactory.iconImage(POI_IMAGE_IDS[index]),
+                        PropertyFactory.iconAllowOverlap(false),
+                        PropertyFactory.iconIgnorePlacement(false),
+                        PropertyFactory.iconSize(0.055f)
+                    ),
+                BONE_LAYER_IDS.first()
+            )
+        }
+    }
 }
 
 private fun pileFeatureCollection(piles: List<DirtPile>): FeatureCollection = FeatureCollection.fromFeatures(piles.map { pile -> Feature.fromGeometry(Point.fromLngLat(pile.longitude,pile.latitude)).apply { addStringProperty(PILE_ID_PROPERTY,pile.id); addNumberProperty("pileType",pile.type.coerceIn(0,4)) } })
+
+private fun poiFeatureCollection(pois: List<MapPoi>): FeatureCollection = FeatureCollection.fromFeatures(
+    pois.map { poi ->
+        Feature.fromGeometry(Point.fromLngLat(poi.longitude, poi.latitude)).apply {
+            addStringProperty(POI_TYPE_PROPERTY, poi.poiType)
+            addStringProperty("poiId", poi.poiId)
+            poi.name?.let { addStringProperty("name", it) }
+        }
+    }
+)
 
 private fun playerFeatureCollection(player: GeoPoint?): FeatureCollection {
     if (player == null) return FeatureCollection.fromFeatures(emptyArray<Feature>())
