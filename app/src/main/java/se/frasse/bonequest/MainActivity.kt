@@ -1101,6 +1101,10 @@ private fun defaultMarkerBitmap(context: android.content.Context): Bitmap {
 
 internal fun markerBitmap(context:android.content.Context,id:String):Bitmap {
     if(id=="marker_default_paw")return defaultMarkerBitmap(context)
+    if(id=="marker_frasse_mythic") {
+        val source=BitmapFactory.decodeResource(context.resources,R.drawable.marker_frasse_mythic)
+        return Bitmap.createScaledBitmap(source,112,112,true)
+    }
     val size=112;val bitmap=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);val canvas=Canvas(bitmap)
     val paint=Paint(Paint.ANTI_ALIAS_FLAG);val seed=id.hashCode();val palette=intArrayOf(
         Color.rgb(226,170,61),Color.rgb(22,141,138),Color.rgb(81,137,77),Color.rgb(46,125,170),Color.rgb(205,108,79),Color.rgb(163,113,190)
