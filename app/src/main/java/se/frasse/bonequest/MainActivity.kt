@@ -137,7 +137,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var permissionRefresh by remember { mutableIntStateOf(0) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionGranted = it
-        if (!it) status = "GPS-behörighet behövs för att spela"
+        if (!it) status = context.getString(R.string.status_location_permission_required)
     }
 
     DisposableEffect(connectivityManager){
@@ -151,11 +151,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
     }
     val backgroundPermissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted->
         if(granted)permissionRefresh++
-        if(!granted)status="Tillåt plats hela tiden i Androids inställningar för Promenadläge."
+        if(!granted)status=context.getString(R.string.status_background_location_required)
     }
     val notificationPermissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted->
         if(granted)permissionRefresh++
-        if(!granted)status="Tillåt notifieringar för varningar när skärmen är släckt."
+        if(!granted)status=context.getString(R.string.status_notification_permission_required)
     }
 
     LaunchedEffect(Unit) {
@@ -207,7 +207,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             }
         }
         runCatching { server.subscribe() }
-            .onFailure { status = "Liveuppdateringen kunde inte ansluta" }
+            .onFailure { status = context.getString(R.string.status_realtime_failed) }
         try {
             kotlinx.coroutines.awaitCancellation()
         } finally {
@@ -235,11 +235,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     } }
                 }
                 if (location.accuracy <= 25) {
-                    if (!gpsHasBeenReady || gpsWasInError) status = "GPS klar"
+                    if (!gpsHasBeenReady || gpsWasInError) status = context.getString(R.string.status_gps_ready)
                     gpsHasBeenReady = true
                     gpsWasInError = false
                 } else if (!gpsWasInError) {
-                    status = "GPS noggrannhet ±${location.accuracy.toInt()} m"
+                    status = context.getString(R.string.status_gps_accuracy,location.accuracy.toInt())
                     gpsWasInError = true
                 }
                 if (worldRepository!=null) {
@@ -263,7 +263,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                     bones=snapshot.bones; piles=snapshot.piles
                                     lastWorldCenter=point; lastWorldLoadAt=System.currentTimeMillis()
                                 }
-                                .onFailure { status="Kunde inte hämta spelvärlden" }
+                                .onFailure { status=context.getString(R.string.status_world_load_failed) }
                             loadingBones=false
                         }
                     }
@@ -287,10 +287,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                         repository.savePiles(piles)
                                     }
                                     repository.markGenerated(point)
-                                    status = "${generated.size} ben placerade på stigar"
-                                } else status = "Inga tydliga gångstigar hittades här"
+                                    status = context.getString(R.string.status_bones_placed,generated.size)
+                                } else status = context.getString(R.string.status_no_walkable_paths)
                             }
-                            .onFailure { status = "Kunde inte hämta stigar – försök igen senare" }
+                            .onFailure { status = context.getString(R.string.status_path_load_failed) }
                         loadingBones = false
                     }
                 }

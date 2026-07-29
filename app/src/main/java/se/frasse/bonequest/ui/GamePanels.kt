@@ -275,6 +275,7 @@ private fun roleName(role:String)=when(role){"leader"->"Flockledare";"guard"->"F
     var lat by remember{mutableStateOf("")};var lon by remember{mutableStateOf("")};var variant by remember{mutableStateOf("0")};var type by remember{mutableStateOf("bone")}
     var objectId by remember{mutableStateOf("")};var poiName by remember{mutableStateOf("")};var poiType by remember{mutableStateOf("dog_park")};var poiShop by remember{mutableStateOf(false)}
     var addressSearch by remember{mutableStateOf("")}
+    var confirmObjectUpdate by remember{mutableStateOf(false)}
     var message by remember{mutableStateOf<String?>(null)};var audits by remember{mutableStateOf<List<AdminAudit>>(emptyList())}
     fun find(){scope.launch{players=runCatching{api.adminPlayers(search)}.getOrDefault(emptyList())}}
     Column{
@@ -282,6 +283,12 @@ private fun roleName(role:String)=when(role){"leader"->"Flockledare";"guard"->"F
         Button(onClick=onMapMode,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_083))}
         TabRow(tab){listOf("SPELARE","OBJEKT","PLATSER","LOGG").forEachIndexed{i,t->Tab(tab==i,{tab=i;if(i==3)scope.launch{audits=runCatching{api.audit()}.getOrDefault(emptyList())}},text={Text(t,fontSize=10.sp)})}}
         message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(7.dp))}
+        if(tab==1&&objectId.isNotBlank()){
+            OutlinedButton(
+                enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&variant.toIntOrNull()!=null&&reason.length>=3,
+                onClick={confirmObjectUpdate=true},modifier=Modifier.fillMaxWidth()
+            ){Text(stringResource(R.string.admin_preview_update))}
+        }
         when(tab){
             0->{
                 Row{OutlinedTextField(search,{search=it},Modifier.weight(1f),label={Text(stringResource(R.string.ui_text_045))});Button(onClick={find()},modifier=Modifier.padding(start=5.dp)){Text(stringResource(R.string.ui_text_069))}}
@@ -304,4 +311,15 @@ private fun roleName(role:String)=when(role){"leader"->"Flockledare";"guard"->"F
             else->LazyColumn{items(audits){a->Column(Modifier.fillMaxWidth().padding(8.dp)){Text(a.action,color=PanelGold,fontWeight=FontWeight.Bold);Text(a.reason,color=PanelCream);Text(a.createdAt,color=PanelCream.copy(alpha=.6f),fontSize=11.sp)}}}
         }
     }
+    if(confirmObjectUpdate)AlertDialog(
+        onDismissRequest={confirmObjectUpdate=false},
+        title={Text(stringResource(R.string.admin_update_title))},
+        text={Text(stringResource(R.string.admin_placement_warning))},
+        confirmButton={Button(onClick={confirmObjectUpdate=false;scope.launch{
+            runCatching{api.adminPlaceObject(type,lat.toDouble(),lon.toDouble(),variant.toInt(),reason,objectId)}
+                .onSuccess{message=context.getString(R.string.admin_object_updated)}
+                .onFailure{message=context.getString(R.string.admin_object_update_failed)}
+        }}){Text(stringResource(R.string.admin_place_anyway))}},
+        dismissButton={TextButton(onClick={confirmObjectUpdate=false}){Text(stringResource(R.string.ui_text_006))}}
+    )
 }

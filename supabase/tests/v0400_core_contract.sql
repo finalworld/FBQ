@@ -90,6 +90,22 @@ begin
   if not has_function_privilege('authenticated','public.list_map_pois(double precision,double precision,double precision,double precision)','EXECUTE') then
     raise exception 'Authenticated role cannot load map POIs';
   end if;
+  if has_function_privilege('anon','public.delete_my_account(text)','EXECUTE')
+     or not has_function_privilege('authenticated','public.delete_my_account(text)','EXECUTE') then
+    raise exception 'Account deletion RPC privileges invalid';
+  end if;
+  if has_function_privilege('anon','public.admin_upsert_world_object(uuid,text,double precision,double precision,integer,text)','EXECUTE')
+     or has_function_privilege('anon','public.admin_delete_world_object(uuid,text,text)','EXECUTE')
+     or has_function_privilege('anon','public.admin_upsert_poi(uuid,text,text,double precision,double precision,text,text,text,text,boolean,text)','EXECUTE')
+     or has_function_privilege('anon','public.admin_delete_poi(uuid,text)','EXECUTE') then
+    raise exception 'Anonymous role can execute administration RPCs';
+  end if;
+  if not has_function_privilege('authenticated','public.admin_upsert_world_object(uuid,text,double precision,double precision,integer,text)','EXECUTE')
+     or not has_function_privilege('authenticated','public.admin_delete_world_object(uuid,text,text)','EXECUTE')
+     or not has_function_privilege('authenticated','public.admin_upsert_poi(uuid,text,text,double precision,double precision,text,text,text,text,boolean,text)','EXECUTE')
+     or not has_function_privilege('authenticated','public.admin_delete_poi(uuid,text)','EXECUTE') then
+    raise exception 'Authenticated role cannot reach server-guarded administration RPCs';
+  end if;
 end $$;
 
 rollback;

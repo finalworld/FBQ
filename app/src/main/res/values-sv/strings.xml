@@ -107,4 +107,20 @@
     <string name="ui_text_089">🐾</string>
     <string name="ui_text_090">🦴  🐾  🎾  🦴  🐾</string>
     <string name="ui_text_091">🦴  🐾  🦴  🎾  🦴</string>
+    <string name="admin_preview_update">FÖRHANDSGRANSKA OCH UPPDATERA</string>
+    <string name="admin_update_title">Uppdatera världsobjekt?</string>
+    <string name="admin_placement_warning">Kontrollera kartpositionen. Objektet kan ligga i vatten, en byggnad eller långt från en gångbar väg. Bekräfta endast om placeringen är avsiktlig.</string>
+    <string name="admin_place_anyway">PLACERA ÄNDÅ</string>
+    <string name="admin_object_updated">Objektet uppdaterades.</string>
+    <string name="admin_object_update_failed">Objektet kunde inte uppdateras.</string>
+    <string name="status_location_permission_required">GPS-behörighet behövs för att spela</string>
+    <string name="status_background_location_required">Tillåt plats hela tiden i Androids inställningar för Promenadläge.</string>
+    <string name="status_notification_permission_required">Tillåt notifieringar för varningar när skärmen är släckt.</string>
+    <string name="status_realtime_failed">Liveuppdateringen kunde inte ansluta</string>
+    <string name="status_gps_ready">GPS klar</string>
+    <string name="status_gps_accuracy">GPS noggrannhet ±%1$d m</string>
+    <string name="status_world_load_failed">Kunde inte hämta spelvärlden</string>
+    <string name="status_bones_placed">%1$d ben placerade på stigar</string>
+    <string name="status_no_walkable_paths">Inga tydliga gångstigar hittades här</string>
+    <string name="status_path_load_failed">Kunde inte hämta stigar – försök igen senare</string>
 </resources>
