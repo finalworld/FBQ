@@ -142,10 +142,14 @@ class WalkingLocationService : Service() {
     private suspend fun alertForBone() {
         val preferences=WalkingPreferences(this)
         if(preferences.vibrationEnabled.first()) {
-            getSystemService(Vibrator::class.java)?.vibrate(VibrationEffect.createOneShot(450,VibrationEffect.DEFAULT_AMPLITUDE))
+            runCatching {
+                getSystemService(Vibrator::class.java)?.vibrate(
+                    VibrationEffect.createOneShot(450,VibrationEffect.DEFAULT_AMPLITUDE)
+                )
+            }
         }
         if(preferences.barkEnabled.first()) {
-            DogBarkPlayer.play()
+            runCatching { DogBarkPlayer.play() }
         }
     }
 

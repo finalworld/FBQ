@@ -12,33 +12,54 @@ import kotlin.random.Random
 object DogBarkPlayer {
     private const val SAMPLE_RATE = 22_050
 
+    @Volatile
+    private var playing = false
+
     fun play() {
+        if (playing) return
+        playing = true
         Thread({
-            val pcm = makeBark()
-            val track = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(SAMPLE_RATE)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                        .build()
-                )
-                .setTransferMode(AudioTrack.MODE_STATIC)
-                .setBufferSizeInBytes(pcm.size * 2)
-                .build()
             try {
-                track.write(pcm, 0, pcm.size)
-                track.play()
-                Thread.sleep(620)
+                // Some physical Android devices reject a static AudioTrack at
+                // this sample rate. Nothing in the proximity alert may ever
+                // be allowed to terminate the app, so the complete audio
+                // lifecycle (including Builder.build) is guarded here.
+                runCatching {
+                    val pcm = makeBark()
+                    val minimumBuffer = AudioTrack.getMinBufferSize(
+                        SAMPLE_RATE,
+                        AudioFormat.CHANNEL_OUT_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT
+                    )
+                    check(minimumBuffer > 0)
+                    val track = AudioTrack.Builder()
+                        .setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .build()
+                        )
+                        .setAudioFormat(
+                            AudioFormat.Builder()
+                                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                .setSampleRate(SAMPLE_RATE)
+                                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                                .build()
+                        )
+                        .setTransferMode(AudioTrack.MODE_STREAM)
+                        .setBufferSizeInBytes(maxOf(minimumBuffer, pcm.size * 2))
+                        .build()
+                    try {
+                        check(track.state == AudioTrack.STATE_INITIALIZED)
+                        track.play()
+                        track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
+                    } finally {
+                        runCatching { track.stop() }
+                        runCatching { track.release() }
+                    }
+                }
             } finally {
-                runCatching { track.stop() }
-                track.release()
+                playing = false
             }
         }, "frasse-bark").start()
     }

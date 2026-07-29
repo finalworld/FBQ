@@ -354,9 +354,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
         if(nearBone==null){insideForegroundBoneZone=false;return@LaunchedEffect}
         if(!insideForegroundBoneZone&&!currentProfile.walkingModeEnabled){
             insideForegroundBoneZone=true
-            if(currentProfile.vibrationEnabled) context.getSystemService(android.os.Vibrator::class.java)
-                ?.vibrate(android.os.VibrationEffect.createOneShot(350,android.os.VibrationEffect.DEFAULT_AMPLITUDE))
-            if(currentProfile.barkEnabled) DogBarkPlayer.play()
+            if(currentProfile.vibrationEnabled) runCatching {
+                context.getSystemService(android.os.Vibrator::class.java)
+                    ?.vibrate(android.os.VibrationEffect.createOneShot(350,android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+            }
+            if(currentProfile.barkEnabled) runCatching { DogBarkPlayer.play() }
         }
     }
     LaunchedEffect(pendingPileReward?.claimId){
