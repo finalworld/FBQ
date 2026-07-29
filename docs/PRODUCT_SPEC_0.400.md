@@ -44,6 +44,7 @@ FBQ är ett enkelt svenskt promenadspel. Kartan och korta interaktioner ska få 
 - Ben ligger normalt 250–350 meter från varandra på eller nära gångbara vägar. Sällsynta undantag tillåts. Aldrig i vatten, byggnader eller otillgänglig mark.
 - Efter plockning skapas ett nytt ben efter cirka 5 minuter på en ny lämplig plats, normalt minst 250 meter från den gamla och andra ben, med ny slumpad typ.
 - Ett systemplacerat löst ben som inte tagits på 10 timmar byter automatiskt till en annan bentyp på samma plats. Adminplacerade ben och testben påverkas inte.
+- Systemplacerade lösa ben och jordhögar hålls minst 100 meter från varandra så att deras kartikoner aldrig täcker varandra.
 - Ben och högar hämtas högst 5 km från spelarens verkliga GPS-position, oavsett kartpanorering. Borttagning synkas i realtid och animeras med en kort pixelglimt.
 - Tryck på avlägset ben visar namn, värde och avstånd. `Ta benet` visas endast inom räckvidd.
 

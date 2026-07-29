@@ -135,6 +135,12 @@ begin
      not like '%10 hours%' then
     raise exception 'System bones do not refresh after ten uncollected hours';
   end if;
+  if pg_get_functiondef('private.maintain_world_bones(double precision,double precision)'::regprocedure)
+     not like '%public.dirt_piles%' or
+     pg_get_functiondef('private.maintain_dirt_piles(double precision,double precision)'::regprocedure)
+     not like '%public.world_bones%' then
+    raise exception 'Bones and dirt piles do not enforce cross-type clearance';
+  end if;
 end $$;
 
 rollback;
