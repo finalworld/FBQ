@@ -486,7 +486,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 val pileOffset=if(nearBone!=null)92.dp else 22.dp
                 Box(Modifier.align(Alignment.BottomCenter).zIndex(2f).navigationBarsPadding().padding(bottom=pileOffset)
                     .widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp)
-                    .clickable(enabled=boneCount>=pile.cost&&!collecting&&isOnline){
+                    .clickable(enabled=(adminMapMode||boneCount>=pile.cost)&&!collecting&&isOnline){
                         if(adminMapMode){status=context.getString(R.string.admin_pile_preview,pile.cost);return@clickable}
                         pileToConfirm=pile
                     }) { ActionButtonContent(dirtDrawable(pile.type),if(adminMapMode)stringResource(R.string.action_test_pile) else if(boneCount>=pile.cost)stringResource(R.string.action_dig_pile) else stringResource(R.string.action_need_bones,pile.cost),stringResource(R.string.action_cost_bones,pile.cost)) }

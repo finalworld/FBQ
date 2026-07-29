@@ -51,13 +51,13 @@ private val PanelTeal=Color(0xFF168D8A)
             Column(Modifier.width(104.dp).fillMaxHeight().background(Color(0xFF111719)).padding(top=18.dp),horizontalAlignment=Alignment.CenterHorizontally) {
                 Text(stringResource(R.string.ui_text_019),color=PanelGold,fontWeight=FontWeight.Black,fontSize=17.sp)
                 Spacer(Modifier.height(18.dp))
-                MenuTile("🐾","Profil") { onOpen(GamePanel.PROFILE) }
-                MenuTile("🦴","Ben") { onOpen(GamePanel.COLLECTION) }
-                MenuTile("🎒","Utrustning") { onOpen(GamePanel.EQUIPMENT) }
-                MenuTile("🐕","Flock") { onOpen(GamePanel.FLOCKS) }
-                MenuTile("🏠","Hem") { onOpen(GamePanel.HOME) }
-                MenuTile("⚙","Inställningar") { onOpen(GamePanel.SETTINGS) }
-                if(profile.isAdmin) MenuTile("★","Admin") { onOpen(GamePanel.ADMIN) }
+                MenuTile("🐾",stringResource(R.string.menu_profile)) { onOpen(GamePanel.PROFILE) }
+                MenuTile("🦴",stringResource(R.string.menu_collection)) { onOpen(GamePanel.COLLECTION) }
+                MenuTile("🎒",stringResource(R.string.menu_equipment)) { onOpen(GamePanel.EQUIPMENT) }
+                MenuTile("🐕",stringResource(R.string.menu_flocks)) { onOpen(GamePanel.FLOCKS) }
+                MenuTile("🏠",stringResource(R.string.menu_home)) { onOpen(GamePanel.HOME) }
+                MenuTile("⚙",stringResource(R.string.menu_settings)) { onOpen(GamePanel.SETTINGS) }
+                if(profile.isAdmin) MenuTile("★",stringResource(R.string.menu_admin)) { onOpen(GamePanel.ADMIN) }
             }
             Column(Modifier.weight(1f).fillMaxHeight().padding(18.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically) {
@@ -88,8 +88,8 @@ private val PanelTeal=Color(0xFF168D8A)
     Surface(Modifier.fillMaxSize(),color=PanelDark) {
         Column(Modifier.statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(58.dp).background(Color(0xFF101719)).padding(horizontal=14.dp),verticalAlignment=Alignment.CenterVertically) {
-                TextButton(onClick=onClose){Text(stringResource(R.string.ui_text_087))};Text(panelTitle(panel),Modifier.weight(1f),color=PanelGold,fontWeight=FontWeight.Black,fontSize=21.sp,textAlign=TextAlign.Center)
-                Text("${profile.boneCount} 🦴",color=PanelCream,fontWeight=FontWeight.Bold)
+                TextButton(onClick=onClose){Text(stringResource(R.string.ui_text_087))};Text(stringResource(panelTitleResource(panel)),Modifier.weight(1f),color=PanelGold,fontWeight=FontWeight.Black,fontSize=21.sp,textAlign=TextAlign.Center)
+                Text(stringResource(R.string.panel_bone_balance,profile.boneCount),color=PanelCream,fontWeight=FontWeight.Bold)
             }
             HorizontalDivider(color=PanelGold)
             Box(Modifier.fillMaxSize().padding(14.dp)) {
@@ -112,19 +112,19 @@ private val PanelTeal=Color(0xFF168D8A)
     }
 }
 
-private fun panelTitle(p:GamePanel)=when(p){
-    GamePanel.PROFILE->"MIN PROFIL";GamePanel.COLLECTION->"BENSAMLING";GamePanel.EQUIPMENT->"MIN UTRUSTNING";
-    GamePanel.FLOCKS->"MINA FLOCKAR";GamePanel.HOME->"MITT HEM";GamePanel.SETTINGS->"INSTÄLLNINGAR";
-    GamePanel.ADMIN->"ADMINLÄGE";GamePanel.SHOP->"BUTIK"
+private fun panelTitleResource(p:GamePanel)=when(p){
+    GamePanel.PROFILE->R.string.panel_profile;GamePanel.COLLECTION->R.string.panel_collection;GamePanel.EQUIPMENT->R.string.panel_equipment
+    GamePanel.FLOCKS->R.string.panel_flocks;GamePanel.HOME->R.string.panel_home;GamePanel.SETTINGS->R.string.panel_settings
+    GamePanel.ADMIN->R.string.panel_admin;GamePanel.SHOP->R.string.panel_shop
 }
 
 @Composable private fun ProfilePanel(profile:SessionBootstrap,api:GameApiRepository,onProfile:(SessionBootstrap)->Unit,onCollection:()->Unit) {
     val scope=rememberCoroutineScope();var edit by remember{mutableStateOf(false)};var name by remember{mutableStateOf(profile.displayName)};var message by remember{mutableStateOf<String?>(null)}
     LazyColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        item { StatCard("Spelarnamn",profile.displayName);StatCard("Medlem sedan",profile.createdAt.take(10));StatCard("Bensaldo",profile.boneCount.toString());StatCard("Promenerat","%.2f km".format(profile.totalMeters/1000.0));StatCard("Ben hittade",profile.totalBones.toString());StatCard("Jordhögar",profile.totalPiles.toString());StatCard("Aktiv markör",profile.activeMarkerId) }
+        item { StatCard(stringResource(R.string.profile_game_name),profile.displayName);StatCard(stringResource(R.string.profile_member_label),profile.createdAt.take(10));StatCard(stringResource(R.string.profile_balance_label),profile.boneCount.toString());StatCard(stringResource(R.string.profile_walked_label),stringResource(R.string.profile_km_value,profile.totalMeters/1000.0));StatCard(stringResource(R.string.profile_bones_found_label),profile.totalBones.toString());StatCard(stringResource(R.string.profile_piles_label),profile.totalPiles.toString());StatCard(stringResource(R.string.profile_active_marker_label),profile.activeMarkerId) }
         item { Button(onClick={edit=!edit},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_082))} }
         item { OutlinedButton(onClick=onCollection,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_084))} }
-        if(edit) item { OutlinedTextField(name,{name=it.take(20)},Modifier.fillMaxWidth(),singleLine=true);Button(enabled=GameNameRules.isValidPlayerName(name),onClick={scope.launch{runCatching{api.changeName(name);api.bootstrap()}.onSuccess{onProfile(it);edit=false}.onFailure{message="Namnet kunde inte ändras ännu"}}}){Text(stringResource(R.string.ui_text_062))}}
+        if(edit) item { OutlinedTextField(name,{name=it.take(20)},Modifier.fillMaxWidth(),singleLine=true);Button(enabled=GameNameRules.isValidPlayerName(name),onClick={scope.launch{runCatching{api.changeName(name);api.bootstrap()}.onSuccess{onProfile(it);edit=false}.onFailure{message=it.message}}}){Text(stringResource(R.string.ui_text_062))}}
         message?.let { item { Text(it,color=PanelGold) } }
     }
 }
@@ -297,7 +297,7 @@ private fun shortTimestamp(value:String)=runCatching{java.time.Instant.parse(val
     Column{
         Text(stringResource(R.string.ui_text_004),color=Color(0xFFFF6B5D),fontWeight=FontWeight.Black)
         Button(onClick=onMapMode,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_083))}
-        TabRow(tab){listOf("SPELARE","OBJEKT","PLATSER","LOGG").forEachIndexed{i,t->Tab(tab==i,{tab=i;if(i==3)scope.launch{audits=runCatching{api.audit()}.getOrDefault(emptyList())}},text={Text(t,fontSize=10.sp)})}}
+        TabRow(tab){listOf(R.string.admin_tab_players,R.string.admin_tab_objects,R.string.admin_tab_places,R.string.admin_tab_log).forEachIndexed{i,t->Tab(tab==i,{tab=i;if(i==3)scope.launch{audits=runCatching{api.audit()}.getOrDefault(emptyList())}},text={Text(stringResource(t),fontSize=10.sp)})}}
         message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(7.dp))}
         if(tab==1&&objectId.isNotBlank()){
             OutlinedButton(
@@ -311,19 +311,19 @@ private fun shortTimestamp(value:String)=runCatching{java.time.Instant.parse(val
                 val p=selected
                 if(p==null) LazyColumn{items(players){row->Row(Modifier.fillMaxWidth().clickable{selected=row}.padding(10.dp)){Text(row.displayName,Modifier.weight(1f),color=PanelCream);Text(row.boneCount.toString(),color=PanelGold)}}}
                 else LazyColumn(verticalArrangement=Arrangement.spacedBy(5.dp)){item{
-                    Text(p.displayName,color=PanelGold,fontSize=20.sp);Text("${p.boneCount} ben • ${if(p.isSuspended)"avstängd" else "aktiv"}",color=PanelCream)
+                    Text(p.displayName,color=PanelGold,fontSize=20.sp);Text(stringResource(R.string.admin_player_summary,p.boneCount,stringResource(if(p.isSuspended)R.string.admin_status_suspended else R.string.admin_status_active)),color=PanelCream)
                     OutlinedTextField(amount,{amount=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_012))})
                     OutlinedTextField(forcedName,{forcedName=it.take(20)},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_046))})
                     OutlinedTextField(itemId,{itemId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_024))})
                     OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_051))})
-                    Row{Button(enabled=reason.length>=3&&amount.toLongOrNull()!=null,onClick={scope.launch{runCatching{api.adminAdjustBones(p.playerId,amount.toLong(),reason)}.onSuccess{message="Saldot ändrades";find()}}}){Text(stringResource(R.string.ui_text_009))};Button(enabled=reason.length>=3,onClick={scope.launch{runCatching{if(p.isSuspended)api.adminUnsuspend(p.playerId,reason) else api.adminSuspend(p.playerId,reason)}.onSuccess{message="Status ändrad";find()}}}){Text(if(p.isSuspended)"AKTIVERA" else "STÄNG AV")}}
-                    Button(enabled=reason.length>=3&&GameNameRules.isValidPlayerName(forcedName),onClick={scope.launch{runCatching{api.adminForceName(p.playerId,forcedName,reason)}.onSuccess{message="Namnet ändrades";find()}}}){Text(stringResource(R.string.ui_text_011))}
-                    Row{Button(enabled=reason.length>=3&&itemId.isNotBlank(),onClick={scope.launch{runCatching{api.adminSetItem(p.playerId,itemId,true,reason)}.onSuccess{message="Föremålet gavs"}}}){Text(stringResource(R.string.ui_text_025))};Button(enabled=reason.length>=3&&itemId.isNotBlank(),onClick={scope.launch{runCatching{api.adminSetItem(p.playerId,itemId,false,reason)}.onSuccess{message="Föremålet togs bort"}}}){Text(stringResource(R.string.ui_text_074))}}
+                    Row{Button(enabled=reason.length>=3&&amount.toLongOrNull()!=null,onClick={scope.launch{runCatching{api.adminAdjustBones(p.playerId,amount.toLong(),reason)}.onSuccess{message=context.getString(R.string.admin_balance_changed);find()}}}){Text(stringResource(R.string.ui_text_009))};Button(enabled=reason.length>=3,onClick={scope.launch{runCatching{if(p.isSuspended)api.adminUnsuspend(p.playerId,reason) else api.adminSuspend(p.playerId,reason)}.onSuccess{message=context.getString(R.string.admin_status_changed);find()}}}){Text(stringResource(if(p.isSuspended)R.string.admin_activate else R.string.admin_suspend))}}
+                    Button(enabled=reason.length>=3&&GameNameRules.isValidPlayerName(forcedName),onClick={scope.launch{runCatching{api.adminForceName(p.playerId,forcedName,reason)}.onSuccess{message=context.getString(R.string.admin_name_changed);find()}}}){Text(stringResource(R.string.ui_text_011))}
+                    Row{Button(enabled=reason.length>=3&&itemId.isNotBlank(),onClick={scope.launch{runCatching{api.adminSetItem(p.playerId,itemId,true,reason)}.onSuccess{message=context.getString(R.string.admin_item_granted)}}}){Text(stringResource(R.string.ui_text_025))};Button(enabled=reason.length>=3&&itemId.isNotBlank(),onClick={scope.launch{runCatching{api.adminSetItem(p.playerId,itemId,false,reason)}.onSuccess{message=context.getString(R.string.admin_item_removed)}}}){Text(stringResource(R.string.ui_text_074))}}
                     TextButton(onClick={selected=null}){Text(stringResource(R.string.ui_text_076))}
                 }}
             }
-            1->Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Text(stringResource(R.string.ui_text_056),color=PanelCream);Row{listOf("bone","pile").forEach{x->FilterChip(type==x,{type=x},label={Text(if(x=="bone")"BEN" else "HÖG")},modifier=Modifier.padding(end=5.dp))}};Row{OutlinedTextField(addressSearch,{addressSearch=it},Modifier.weight(1f),label={Text(stringResource(R.string.ui_text_008))});Button(enabled=addressSearch.isNotBlank(),onClick={scope.launch{val found=withContext(Dispatchers.IO){runCatching{android.location.Geocoder(context).getFromLocationName(addressSearch,1)?.firstOrNull()}.getOrNull()};if(found==null)message="Platsen hittades inte" else{lat="%.6f".format(java.util.Locale.US,found.latitude);lon="%.6f".format(java.util.Locale.US,found.longitude);message="Platsen hittades"}}}){Text(stringResource(R.string.ui_text_069))}};OutlinedTextField(objectId,{objectId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_050))});OutlinedTextField(lat,{lat=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_037))});OutlinedTextField(lon,{lon=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_038))});OutlinedTextField(variant,{variant=it},Modifier.fillMaxWidth(),label={Text(if(type=="bone")"Bentyp 0–11" else "Högtyp 0–4")});OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_051))});Button(enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={confirmObjectPlacement=true},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_053))};OutlinedButton(enabled=objectId.isNotBlank()&&reason.length>=3,onClick={scope.launch{runCatching{api.adminDeleteWorldObject(objectId,type,reason)}.onSuccess{message="Objektet togs bort"}.onFailure{message="Kunde inte ta bort objektet"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_071))}}
-            2->LazyColumn(verticalArrangement=Arrangement.spacedBy(7.dp)){item{Text(stringResource(R.string.ui_text_067),color=PanelCream);OutlinedTextField(objectId,{objectId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_054))});OutlinedTextField(poiName,{poiName=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_044))});Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())){listOf("dog_park","pet_shop","veterinary","grooming","dog_wash").forEach{x->FilterChip(poiType==x,{poiType=x},label={Text(x)},modifier=Modifier.padding(end=4.dp))}};OutlinedTextField(lat,{lat=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_037))});OutlinedTextField(lon,{lon=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_038))});SettingToggle("Spelbutik","Besök butik blir tillgänglig inom 50 meter.",poiShop){poiShop=it};OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_051))});Button(enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&reason.length>=3,onClick={scope.launch{runCatching{api.adminUpsertPoi(objectId.ifBlank{null},poiType,poiName,lat.toDouble(),lon.toDouble(),poiShop,reason)}.onSuccess{message="Kartplatsen sparades"}.onFailure{message="Kartplatsen kunde inte sparas"}}},modifier=Modifier.fillMaxWidth()){Text(if(objectId.isBlank())"SKAPA PLATS" else "UPPDATERA PLATS")};OutlinedButton(enabled=objectId.isNotBlank()&&reason.length>=3,onClick={scope.launch{runCatching{api.adminDeletePoi(objectId,reason)}.onSuccess{message="Kartplatsen togs bort"}.onFailure{message="Kartplatsen kunde inte tas bort"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_072))}}}
+            1->Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Text(stringResource(R.string.ui_text_056),color=PanelCream);Row{listOf("bone","pile").forEach{x->FilterChip(type==x,{type=x},label={Text(stringResource(if(x=="bone")R.string.admin_bone else R.string.admin_pile))},modifier=Modifier.padding(end=5.dp))}};Row{OutlinedTextField(addressSearch,{addressSearch=it},Modifier.weight(1f),label={Text(stringResource(R.string.ui_text_008))});Button(enabled=addressSearch.isNotBlank(),onClick={scope.launch{val found=withContext(Dispatchers.IO){runCatching{android.location.Geocoder(context).getFromLocationName(addressSearch,1)?.firstOrNull()}.getOrNull()};if(found==null)message=context.getString(R.string.admin_place_not_found) else{lat="%.6f".format(java.util.Locale.US,found.latitude);lon="%.6f".format(java.util.Locale.US,found.longitude);message=context.getString(R.string.admin_place_found)}}}){Text(stringResource(R.string.ui_text_069))}};OutlinedTextField(objectId,{objectId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_050))});OutlinedTextField(lat,{lat=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_037))});OutlinedTextField(lon,{lon=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_038))});OutlinedTextField(variant,{variant=it},Modifier.fillMaxWidth(),label={Text(stringResource(if(type=="bone")R.string.admin_bone_type_range else R.string.admin_pile_type_range))});OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_051))});Button(enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={confirmObjectPlacement=true},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_053))};OutlinedButton(enabled=objectId.isNotBlank()&&reason.length>=3,onClick={scope.launch{runCatching{api.adminDeleteWorldObject(objectId,type,reason)}.onSuccess{message=context.getString(R.string.admin_object_removed)}.onFailure{message=context.getString(R.string.admin_object_remove_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_071))}}
+            2->LazyColumn(verticalArrangement=Arrangement.spacedBy(7.dp)){item{Text(stringResource(R.string.ui_text_067),color=PanelCream);OutlinedTextField(objectId,{objectId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_054))});OutlinedTextField(poiName,{poiName=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_044))});Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())){listOf("dog_park","pet_shop","veterinary","grooming","dog_wash").forEach{x->FilterChip(poiType==x,{poiType=x},label={Text(stringResource(poiTypeNameResource(x)))},modifier=Modifier.padding(end=4.dp))}};OutlinedTextField(lat,{lat=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_037))});OutlinedTextField(lon,{lon=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_038))});SettingToggle(stringResource(R.string.admin_game_shop),stringResource(R.string.admin_game_shop_help),poiShop){poiShop=it};OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_051))});Button(enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&reason.length>=3,onClick={scope.launch{runCatching{api.adminUpsertPoi(objectId.ifBlank{null},poiType,poiName,lat.toDouble(),lon.toDouble(),poiShop,reason)}.onSuccess{message=context.getString(R.string.admin_place_saved)}.onFailure{message=context.getString(R.string.admin_place_save_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(if(objectId.isBlank())R.string.admin_create_place else R.string.admin_update_place))};OutlinedButton(enabled=objectId.isNotBlank()&&reason.length>=3,onClick={scope.launch{runCatching{api.adminDeletePoi(objectId,reason)}.onSuccess{message=context.getString(R.string.admin_place_removed)}.onFailure{message=context.getString(R.string.admin_place_remove_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_072))}}}
             else->LazyColumn{items(audits){a->Column(Modifier.fillMaxWidth().padding(8.dp)){Text(a.action,color=PanelGold,fontWeight=FontWeight.Bold);Text(a.reason,color=PanelCream);Text(a.createdAt,color=PanelCream.copy(alpha=.6f),fontSize=11.sp)}}}
         }
     }
@@ -338,4 +338,11 @@ private fun shortTimestamp(value:String)=runCatching{java.time.Instant.parse(val
         }}){Text(stringResource(R.string.admin_place_anyway))}},
         dismissButton={TextButton(onClick={confirmObjectPlacement=false}){Text(stringResource(R.string.ui_text_006))}}
     )
+}
+private fun poiTypeNameResource(type:String)=when(type){
+    "dog_park"->R.string.poi_type_dog_park
+    "pet_shop"->R.string.poi_type_pet_shop
+    "veterinary"->R.string.poi_type_veterinary
+    "grooming"->R.string.poi_type_grooming
+    else->R.string.poi_type_dog_wash
 }
