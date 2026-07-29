@@ -255,6 +255,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 piles = piles,
                 pois = mapPois,
                 nearbyPlayers = nearbyPlayers,
+                playerMarkerId = currentProfile.activeMarkerId,
                 followPlayer = followPlayer,
                 onManualMove = { followPlayer = false },
                 onBoundsChanged = { bounds ->
@@ -552,7 +553,7 @@ private fun dirtDrawable(type:Int)=intArrayOf(
 
 @Composable
 private fun GameMap(
-    player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, pois: List<MapPoi>, nearbyPlayers:List<NearbyPlayer>, followPlayer: Boolean,
+    player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, pois: List<MapPoi>, nearbyPlayers:List<NearbyPlayer>, playerMarkerId:String, followPlayer: Boolean,
     onManualMove: () -> Unit, onBoundsChanged: (MapBounds) -> Unit, onBoneTapped: (Bone) -> Unit,
     onPlayerTapped: () -> Unit, onPileTapped: (DirtPile) -> Unit, modifier: Modifier
 ) {
@@ -651,10 +652,11 @@ private fun GameMap(
 
     androidx.compose.ui.viewinterop.AndroidView(factory = { mapView }, modifier = modifier)
 
-    LaunchedEffect(map, styleReady, player, followPlayer) {
+    LaunchedEffect(map, styleReady, player, followPlayer,playerMarkerId) {
         val m = map ?: return@LaunchedEffect
         if (!styleReady) return@LaunchedEffect
         val style = m.style ?: return@LaunchedEffect
+        style.addImage(PLAYER_IMAGE_ID,markerBitmap(context,playerMarkerId))
         val source = style.getSourceAs<GeoJsonSource>(PLAYER_SOURCE_ID) ?: return@LaunchedEffect
         source.setGeoJson(playerFeatureCollection(player))
 
@@ -865,6 +867,29 @@ private fun defaultMarkerBitmap(context: android.content.Context): Bitmap {
     val top = (source.height - cropSide) / 2
     val cropped = Bitmap.createBitmap(source, left, top, cropSide, cropSide)
     return Bitmap.createScaledBitmap(cropped, 112, 112, false)
+}
+
+private fun markerBitmap(context:android.content.Context,id:String):Bitmap {
+    if(id=="marker_default_paw")return defaultMarkerBitmap(context)
+    val size=112;val bitmap=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);val canvas=Canvas(bitmap)
+    val paint=Paint(Paint.ANTI_ALIAS_FLAG);val seed=id.hashCode();val palette=intArrayOf(
+        Color.rgb(226,170,61),Color.rgb(22,141,138),Color.rgb(81,137,77),Color.rgb(46,125,170),Color.rgb(205,108,79),Color.rgb(163,113,190)
+    );val accent=palette[Math.floorMod(seed,palette.size)]
+    paint.color=Color.rgb(18,24,27);canvas.drawCircle(56f,56f,52f,paint);paint.style=Paint.Style.STROKE;paint.strokeWidth=6f;paint.color=if(id=="marker_frasse_mythic")Color.rgb(255,197,64) else accent;canvas.drawCircle(56f,56f,47f,paint);paint.style=Paint.Style.FILL
+    when {
+        id=="marker_frasse_mythic"||id.startsWith("marker_breed_")-> {
+            paint.color=if(id=="marker_frasse_mythic")Color.rgb(225,173,108) else accent
+            canvas.drawOval(27f,25f,85f,86f,paint);canvas.drawOval(17f,27f,37f,73f,paint);canvas.drawOval(75f,27f,95f,73f,paint)
+            paint.color=Color.BLACK;canvas.drawCircle(46f,51f,4f,paint);canvas.drawCircle(66f,51f,4f,paint);canvas.drawOval(49f,62f,63f,72f,paint)
+            if(id=="marker_frasse_mythic"){paint.color=Color.rgb(16,143,145);canvas.drawRect(31f,79f,81f,90f,paint)}
+        }
+        id.startsWith("marker_toy_")-> {paint.color=accent;canvas.drawCircle(56f,56f,29f,paint);paint.style=Paint.Style.STROKE;paint.color=Color.WHITE;paint.strokeWidth=5f;canvas.drawLine(31f,48f,81f,64f,paint);canvas.drawLine(43f,30f,61f,83f,paint);paint.style=Paint.Style.FILL}
+        id.startsWith("marker_tag_")-> {paint.color=accent;val path=android.graphics.Path();path.moveTo(56f,22f);path.lineTo(88f,49f);path.lineTo(56f,91f);path.lineTo(24f,49f);path.close();canvas.drawPath(path,paint);paint.color=Color.WHITE;canvas.drawCircle(56f,43f,7f,paint)}
+        id.startsWith("marker_gear_")-> {paint.style=Paint.Style.STROKE;paint.strokeWidth=11f;paint.color=accent;canvas.drawCircle(49f,57f,25f,paint);canvas.drawLine(68f,40f,89f,22f,paint);paint.style=Paint.Style.FILL}
+        id.startsWith("marker_emblem_")-> {paint.color=accent;val path=android.graphics.Path();path.moveTo(56f,20f);path.lineTo(88f,33f);path.lineTo(81f,76f);path.lineTo(56f,94f);path.lineTo(31f,76f);path.lineTo(24f,33f);path.close();canvas.drawPath(path,paint);paint.color=Color.WHITE;canvas.drawCircle(56f,57f,12f,paint)}
+        else->{paint.color=accent;canvas.drawOval(37f,51f,75f,87f,paint);listOf(32f to 43f,49f to 30f,67f to 30f,84f to 43f).forEach{canvas.drawCircle(it.first,it.second,10f,paint)}}
+    }
+    return bitmap
 }
 
 private fun boneBitmap(context: android.content.Context): Bitmap {
