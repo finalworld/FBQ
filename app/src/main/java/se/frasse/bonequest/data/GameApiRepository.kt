@@ -67,6 +67,7 @@ import java.util.UUID
     @SerialName("target_object_id") val targetObjectId:String?=null,val reason:String,
     val details:kotlinx.serialization.json.JsonElement,@SerialName("created_at") val createdAt:String
 )
+@Serializable data class PoiSettings(@SerialName("show_dog_parks") val showDogParks:Boolean=true,@SerialName("show_pet_shops") val showPetShops:Boolean=true,@SerialName("show_vets") val showVets:Boolean=true,@SerialName("show_grooming") val showGrooming:Boolean=true)
 
 class GameApiRepository(private val client:SupabaseClient) {
     suspend fun bootstrap():SessionBootstrap = client.postgrest.rpc("get_session_bootstrap").decodeSingle()
@@ -77,6 +78,8 @@ class GameApiRepository(private val client:SupabaseClient) {
             put("p_walking_mode_enabled",walking);put("p_bark_enabled",bark);put("p_vibration_enabled",vibration)
         }
     )
+    suspend fun poiSettings():PoiSettings=client.postgrest.rpc("get_poi_settings").decodeSingle()
+    suspend fun updatePoiSettings(settings:PoiSettings)=client.postgrest.rpc("update_poi_settings",buildJsonObject{put("p_show_dog_parks",settings.showDogParks);put("p_show_pet_shops",settings.showPetShops);put("p_show_vets",settings.showVets);put("p_show_grooming",settings.showGrooming)})
     suspend fun setHome():HomeResult = client.postgrest.rpc("set_home_here").decodeSingle()
     suspend fun spinHome(stake:Int):SlotResult = client.postgrest.rpc("spin_home_slot",buildJsonObject {
         put("p_client_request_id",UUID.randomUUID().toString());put("p_stake",stake)

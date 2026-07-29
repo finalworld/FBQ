@@ -70,6 +70,7 @@ private val PanelTeal=Color(0xFF168D8A)
 
 @Composable fun GamePanelScreen(
     panel:GamePanel,profile:SessionBootstrap,api:GameApiRepository,shopPoi:MapPoi?=null,
+    poiSettings:PoiSettings=PoiSettings(),onPoiSettings:(PoiSettings)->Unit={},
     onClose:()->Unit,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit
 ) {
     Surface(Modifier.fillMaxSize(),color=PanelDark) {
@@ -86,7 +87,7 @@ private val PanelTeal=Color(0xFF168D8A)
                     GamePanel.EQUIPMENT -> EquipmentPanel(api,onProfile)
                     GamePanel.FLOCKS -> FlocksPanel(api,onBalance)
                     GamePanel.HOME -> HomePanel(profile,api,onBalance,onProfile)
-                    GamePanel.SETTINGS -> SettingsPanel(profile,api,onProfile)
+                    GamePanel.SETTINGS -> SettingsPanel(profile,api,poiSettings,onPoiSettings,onProfile)
                     GamePanel.SHOP -> ShopPanel(profile,api,shopPoi,onBalance)
                     GamePanel.ADMIN -> AdminPanel(api)
                 }
@@ -171,13 +172,18 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
     }
 }
 
-@Composable private fun SettingsPanel(profile:SessionBootstrap,api:GameApiRepository,onProfile:(SessionBootstrap)->Unit) {
-    val context=LocalContext.current;val scope=rememberCoroutineScope();var walking by remember{mutableStateOf(profile.walkingModeEnabled)};var bark by remember{mutableStateOf(profile.barkEnabled)};var vibration by remember{mutableStateOf(profile.vibrationEnabled)};var saved by remember{mutableStateOf<String?>(null)};var deleting by remember{mutableStateOf(false)};var confirmation by remember{mutableStateOf("")}
+@Composable private fun SettingsPanel(profile:SessionBootstrap,api:GameApiRepository,initialPoiSettings:PoiSettings,onPoiSettings:(PoiSettings)->Unit,onProfile:(SessionBootstrap)->Unit) {
+    val context=LocalContext.current;val scope=rememberCoroutineScope();var walking by remember{mutableStateOf(profile.walkingModeEnabled)};var bark by remember{mutableStateOf(profile.barkEnabled)};var vibration by remember{mutableStateOf(profile.vibrationEnabled)};var poiSettings by remember(initialPoiSettings){mutableStateOf(initialPoiSettings)};var saved by remember{mutableStateOf<String?>(null)};var deleting by remember{mutableStateOf(false)};var confirmation by remember{mutableStateOf("")}
     Column(verticalArrangement=Arrangement.spacedBy(13.dp)){
         SettingToggle("Promenadläge","Fortsätter mäta och varnar för ben när skärmen är släckt.",walking){walking=it}
         SettingToggle("Hundskall","Spela ett vänligt voff nära ben.",bark){bark=it}
         SettingToggle("Vibration","Vibrera en gång när du kommer nära ben.",vibration){vibration=it}
-        Button(onClick={scope.launch{runCatching{api.updateSettings(walking,bark,vibration)}.onSuccess{WalkingPreferences(context).setEnabled(walking);if(walking)WalkingServiceController.start(context) else WalkingServiceController.stop(context);onProfile(api.bootstrap());saved="Inställningarna är sparade."}.onFailure{saved="Kunde inte spara inställningarna."}}},modifier=Modifier.fillMaxWidth()){Text("SPARA")}
+        HorizontalDivider(color=PanelGold.copy(alpha=.35f));Text("KARTFILTER",color=PanelGold,fontWeight=FontWeight.Black)
+        SettingToggle("Hundrastgårdar","Visa hundrastgårdar på kartan.",poiSettings.showDogParks){poiSettings=poiSettings.copy(showDogParks=it)}
+        SettingToggle("Djuraffärer","Visa butiker med djur- och hundsaker.",poiSettings.showPetShops){poiSettings=poiSettings.copy(showPetShops=it)}
+        SettingToggle("Veterinärer","Visa veterinärer och djursjukhus.",poiSettings.showVets){poiSettings=poiSettings.copy(showVets=it)}
+        SettingToggle("Hundservice","Visa trim, hunddagis och liknande.",poiSettings.showGrooming){poiSettings=poiSettings.copy(showGrooming=it)}
+        Button(onClick={scope.launch{runCatching{api.updateSettings(walking,bark,vibration);api.updatePoiSettings(poiSettings)}.onSuccess{WalkingPreferences(context).setEnabled(walking);if(walking)WalkingServiceController.start(context) else WalkingServiceController.stop(context);onPoiSettings(poiSettings);onProfile(api.bootstrap());saved="Inställningarna är sparade."}.onFailure{saved="Kunde inte spara inställningarna."}}},modifier=Modifier.fillMaxWidth()){Text("SPARA")}
         saved?.let{Text(it,color=PanelGold)};Spacer(Modifier.weight(1f));OutlinedButton(onClick={scope.launch{api.signOut()}},modifier=Modifier.fillMaxWidth()){Text("LOGGA UT")};TextButton(onClick={deleting=true},modifier=Modifier.fillMaxWidth()){Text("RADERA KONTO",color=Color(0xFFFF6B5D))}
     }
     if(deleting) AlertDialog(onDismissRequest={deleting=false},title={Text("Radera konto permanent?")},text={Column{Text("Flockledarskap måste först överföras. Skriv ditt exakta spelarnamn för att bekräfta:");OutlinedTextField(confirmation,{confirmation=it},Modifier.fillMaxWidth())}},confirmButton={Button(enabled=confirmation==profile.displayName,onClick={scope.launch{runCatching{api.deleteAccount(confirmation)}.onSuccess{api.signOut()}.onFailure{saved="Kontot kunde inte raderas. Kontrollera flockledarskap och namnet."};deleting=false}}){Text("RADERA")}},dismissButton={TextButton(onClick={deleting=false}){Text("AVBRYT")}})

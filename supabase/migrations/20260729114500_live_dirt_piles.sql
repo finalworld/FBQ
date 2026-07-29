@@ -16,12 +16,14 @@ begin
   end loop;
   select count(*) into n from public.dirt_piles d where d.active and
     private.distance_meters(player_lat,player_lon,d.latitude,d.longitude)<=3000;
+  if n < 4 then
   for i in n+1..4 loop
     select * into c from private.random_point_from(player_lat,player_lon,600.0,2800.0);
     t:=floor(random()*5)::smallint;
     insert into public.dirt_piles(latitude,longitude,pile_type,cost,active,updated_at)
     values(c.latitude,c.longitude,t,(array[10,25,50,100,250])[t+1],true,now());
   end loop;
+  end if;
 end $$;
 revoke all on function private.maintain_dirt_piles(double precision,double precision) from public,anon,authenticated;
 

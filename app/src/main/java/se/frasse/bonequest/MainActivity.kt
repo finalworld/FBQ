@@ -84,6 +84,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     val gameApi = remember { SupabaseProvider.clientOrNull?.let(::GameApiRepository) }
     val tracker = remember { LocationTracker(context) }
     val foregroundDistanceFilter=remember { se.frasse.bonequest.walking.DistanceFilter() }
+    val foregroundDistanceQueue=remember { se.frasse.bonequest.walking.DistanceQueue(context) }
     val scope = rememberCoroutineScope()
 
     var permissionGranted by remember {
@@ -94,6 +95,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var piles by remember { mutableStateOf(if (worldRepository==null) repository.loadPiles() else emptyList()) }
     var mapPois by remember { mutableStateOf(emptyList<MapPoi>()) }
     var nearbyPlayers by remember { mutableStateOf(emptyList<NearbyPlayer>()) }
+    var poiSettings by remember { mutableStateOf(PoiSettings()) }
     var boneCount by remember(profile.playerId) { mutableIntStateOf(
         if (worldRepository==null) repository.boneCount()
         else profile.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -122,6 +124,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
 
     LaunchedEffect(Unit) {
         if (!permissionGranted) permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        gameApi?.let{runCatching{it.poiSettings()}.onSuccess{settings->poiSettings=settings}}
     }
 
     LaunchedEffect(status, loadingBones) {
@@ -179,9 +182,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 ))?.let { segment ->
                     SupabaseProvider.clientOrNull?.let { client -> scope.launch {
                         val now=System.currentTimeMillis()
-                        runCatching { se.frasse.bonequest.walking.DistanceSyncRepository(client).sync(
-                            se.frasse.bonequest.walking.DistanceBatch(meters=segment.meters.toInt().coerceAtLeast(1),startedAtEpochMillis=now-1_000,endedAtEpochMillis=now)
-                        ) }.onSuccess { currentProfile=currentProfile.copy(totalMeters=currentProfile.totalMeters+segment.meters.toLong()) }
+                        val batch=se.frasse.bonequest.walking.DistanceBatch(meters=segment.meters.toInt().coerceAtLeast(1),startedAtEpochMillis=now-1_000,endedAtEpochMillis=now)
+                        val sync=se.frasse.bonequest.walking.DistanceSyncRepository(client)
+                        runCatching { sync.sync(batch) }
+                            .onSuccess { currentProfile=currentProfile.copy(totalMeters=currentProfile.totalMeters+segment.meters.toLong());foregroundDistanceQueue.load().forEach{queued->if(runCatching{sync.sync(queued)}.isSuccess)foregroundDistanceQueue.remove(queued.id)} }
+                            .onFailure { foregroundDistanceQueue.enqueue(batch) }
                     } }
                 }
                 if (location.accuracy <= 25) {
@@ -291,7 +296,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 player = player,
                 bones = bones,
                 piles = piles,
-                pois = mapPois,
+                pois = mapPois.filter{poi->poi.hasGameShop||when(poi.poiType){"dog_park"->poiSettings.showDogParks;"pet_shop"->poiSettings.showPetShops;"veterinary"->poiSettings.showVets;else->poiSettings.showGrooming}},
                 nearbyPlayers = nearbyPlayers,
                 playerMarkerId = currentProfile.activeMarkerId,
                 home = currentProfile.homeLat?.let{lat->currentProfile.homeLon?.let{lon->GeoPoint(lat,lon)}},
@@ -502,7 +507,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 }==true }
                 GamePanelScreen(
                     panel=panel,profile=currentProfile.copy(boneCount=boneCount.toLong()),api=api,
-                    shopPoi=nearbyShop,onClose={activePanel=null},
+                    shopPoi=nearbyShop,poiSettings=poiSettings,onPoiSettings={poiSettings=it},onClose={activePanel=null},
                     onBalance={balance->boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=balance)},
                     onProfile={fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()}
                 )
@@ -763,6 +768,8 @@ private const val PLAYER_LAYER_ID = "frasse-player-layer"
 private const val PLAYER_IMAGE_ID = "frasse-player-image"
 private const val NEARBY_PLAYER_SOURCE_ID="frasse-nearby-players-source"
 private const val NEARBY_PLAYER_LAYER_ID="frasse-nearby-players-layer"
+private val FLOCK_DOT_IMAGE_IDS=arrayOf("frasse-flock-dot-1","frasse-flock-dot-2","frasse-flock-dot-3")
+private val FLOCK_DOT_LAYER_IDS=arrayOf("frasse-flock-dot-layer-1","frasse-flock-dot-layer-2","frasse-flock-dot-layer-3")
 private const val HOME_SOURCE_ID="frasse-home-source"
 private const val HOME_LAYER_ID="frasse-home-layer"
 private const val HOME_IMAGE_ID="frasse-home-image"
@@ -784,6 +791,7 @@ private val POI_LAYER_IDS = POI_TYPES.map { "frasse-poi-$it-layer" }.toTypedArra
 private fun installGameLayers(style: Style, context: android.content.Context) {
     style.addImage(PLAYER_IMAGE_ID, defaultMarkerBitmap(context))
     style.addImage(HOME_IMAGE_ID,homeBitmap())
+    intArrayOf(Color.rgb(22,141,138),Color.rgb(226,170,61),Color.rgb(80,145,220)).forEachIndexed{i,color->style.addImage(FLOCK_DOT_IMAGE_IDS[i],dotBitmap(color))}
 
     val boneDrawables = intArrayOf(
         R.drawable.bone_01, R.drawable.bone_02, R.drawable.bone_03,
@@ -850,6 +858,11 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
             PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(.55f)
         ),PLAYER_LAYER_ID
     )
+    FLOCK_DOT_LAYER_IDS.forEachIndexed{i,layerId->if(style.getLayer(layerId)==null)style.addLayer(
+        SymbolLayer(layerId,NEARBY_PLAYER_SOURCE_ID)
+            .withFilter(Expression.gte(Expression.get("sharedFlocks"),Expression.literal(i+1)))
+            .withProperties(PropertyFactory.iconImage(FLOCK_DOT_IMAGE_IDS[i]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconOffset(arrayOf(-12f+i*12f,30f)),PropertyFactory.iconSize(.7f))
+    )}
     if(style.getSource(HOME_SOURCE_ID)==null)style.addSource(GeoJsonSource(HOME_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
     if(style.getLayer(HOME_LAYER_ID)==null)style.addLayerBelow(SymbolLayer(HOME_LAYER_ID,HOME_SOURCE_ID).withProperties(PropertyFactory.iconImage(HOME_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(.65f)),PLAYER_LAYER_ID)
     if (style.getSource(POI_SOURCE_ID) == null) {
@@ -931,6 +944,8 @@ private fun homeBitmap():Bitmap{
     val b=Bitmap.createBitmap(112,112,Bitmap.Config.ARGB_8888);val c=Canvas(b);val p=Paint(Paint.ANTI_ALIAS_FLAG)
     p.color=Color.rgb(20,27,30);c.drawCircle(56f,56f,50f,p);p.color=Color.rgb(226,170,61);val roof=android.graphics.Path();roof.moveTo(18f,54f);roof.lineTo(56f,20f);roof.lineTo(94f,54f);roof.close();c.drawPath(roof,p);p.color=Color.rgb(255,229,176);c.drawRect(27f,50f,85f,90f,p);p.color=Color.rgb(22,141,138);c.drawRect(49f,66f,65f,90f,p);return b
 }
+
+private fun dotBitmap(color:Int):Bitmap{val b=Bitmap.createBitmap(24,24,Bitmap.Config.ARGB_8888);val c=Canvas(b);val p=Paint(Paint.ANTI_ALIAS_FLAG);p.color=Color.BLACK;c.drawCircle(12f,12f,11f,p);p.color=color;c.drawCircle(12f,12f,8f,p);return b}
 
 private fun defaultMarkerBitmap(context: android.content.Context): Bitmap {
     val source = BitmapFactory.decodeResource(context.resources, R.drawable.marker_default_paw)
