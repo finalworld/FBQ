@@ -43,6 +43,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.conflate
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -123,12 +124,24 @@ internal fun GameScreen(profile:SessionBootstrap) {
 
     LaunchedEffect(worldRepository) {
         val server = worldRepository ?: return@LaunchedEffect
-        server.subscribe()
-        server.worldChanges.collect {
-            val center = player ?: return@collect
-            runCatching { server.loadNearby(center) }.onSuccess {
-                bones=it.bones; piles=it.piles
+        val changesJob = launch {
+            server.worldChanges.conflate().collect {
+                // A collection or RNG shuffle can update many rows in one
+                // transaction. Let those events settle, then fetch one fresh
+                // authoritative snapshot for the visible world.
+                delay(250)
+                val center = player ?: return@collect
+                runCatching { server.loadNearby(center) }.onSuccess {
+                    bones=it.bones; piles=it.piles
+                }
             }
+        }
+        runCatching { server.subscribe() }
+            .onFailure { status = "Liveuppdateringen kunde inte ansluta" }
+        try {
+            kotlinx.coroutines.awaitCancellation()
+        } finally {
+            changesJob.cancel()
         }
     }
 
