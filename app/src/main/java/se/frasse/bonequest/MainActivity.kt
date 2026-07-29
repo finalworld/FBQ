@@ -430,11 +430,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 modifier = Modifier.align(Alignment.TopCenter)
             )
 
-            if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=102.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
+            if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=126.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
                 Text(stringResource(R.string.ui_text_049),Modifier.padding(horizontal=12.dp,vertical=7.dp),color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black,fontSize=12.sp)
             }
 
-            if(adminMapMode) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=82.dp).zIndex(5f).fillMaxWidth(),color=androidx.compose.ui.graphics.Color(0xE5A52222)) {
+            if(adminMapMode) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=126.dp).zIndex(5f).fillMaxWidth(),color=androidx.compose.ui.graphics.Color(0xE5A52222)) {
                 Row(Modifier.fillMaxWidth().height(36.dp).padding(start=10.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically){Text("ADMINLÄGE · TRYCK PÅ KARTAN",Modifier.weight(1f),color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black,fontSize=11.sp,maxLines=1);TextButton(onClick={adminMapMode=false;adminPlacement=null},contentPadding=PaddingValues(horizontal=8.dp,vertical=0.dp)){Text("AVSLUTA",color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black,fontSize=11.sp)}}
             }
 
@@ -639,6 +639,64 @@ private fun ConnectivityManager.isCurrentlyOnline():Boolean {
 
 @Composable
 private fun TopHud(count:Int,totalMeters:Long,onMenu:()->Unit,modifier:Modifier=Modifier) {
+    val locale=Locale.forLanguageTag("sv-SE")
+    val distanceFormat=NumberFormat.getNumberInstance(locale).apply {
+        minimumFractionDigits=1
+        maximumFractionDigits=1
+    }
+    Column(modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFF09131A))) {
+        Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+        Box(Modifier.fillMaxWidth().aspectRatio(832f/245f)) {
+            Image(
+                painter=painterResource(R.drawable.hud_spiked_v1),
+                contentDescription=null,
+                modifier=Modifier.matchParentSize(),
+                contentScale=ContentScale.FillBounds
+            )
+            Box(Modifier.fillMaxHeight().fillMaxWidth(.18f).clickable(onClick=onMenu))
+            Column(
+                Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.365f)
+                    .padding(start=10.dp,end=13.dp,top=22.dp,bottom=16.dp),
+                verticalArrangement=Arrangement.SpaceEvenly
+            ) {
+                SpikedHudStat(
+                    R.drawable.bone_01,
+                    NumberFormat.getIntegerInstance(locale).format(count)
+                )
+                SpikedHudStat(
+                    R.drawable.marker_default_paw,
+                    "${distanceFormat.format(totalMeters/1000.0)} KM"
+                )
+            }
+        }
+    }
+}
+
+@Composable private fun SpikedHudStat(icon:Int,value:String){
+    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+        Box(
+            Modifier.size(29.dp).background(
+                androidx.compose.ui.graphics.Color(0xFF171A19),RoundedCornerShape(3.dp)
+            ),
+            contentAlignment=Alignment.Center
+        ) {
+            Image(painterResource(icon),null,Modifier.size(22.dp),contentScale=ContentScale.Fit)
+        }
+        Text(
+            value,
+            Modifier.weight(1f).padding(start=8.dp),
+            color=androidx.compose.ui.graphics.Color(0xFF191711),
+            fontWeight=FontWeight.Black,
+            fontSize=if(value.length>11) 11.sp else 13.sp,
+            maxLines=1,
+            textAlign=TextAlign.Start,
+            softWrap=false
+        )
+    }
+}
+
+@Composable
+private fun LegacyTopHud(count:Int,totalMeters:Long,onMenu:()->Unit,modifier:Modifier=Modifier) {
     Box(modifier.fillMaxWidth()) {
         Image(
             painter = painterResource(R.drawable.hud_panel_pixel_v2),
