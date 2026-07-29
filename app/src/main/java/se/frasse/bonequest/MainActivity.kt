@@ -350,25 +350,6 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     val d = if (p == null) 9999.0 else distanceMeters(p.latitude,p.longitude,pile.latitude,pile.longitude)
                     selectedPile=pile
                     status="Jordhög • kostar ${pile.cost} ben • ${d.toInt()} m"
-                    if (d <= 25.0) {
-                        if (worldRepository!=null) scope.launch {
-                            runCatching { worldRepository.openPile(pile.id) }.fold(
-                                onSuccess = { result ->
-                                    boneCount=result.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                                    piles=piles.filterNot { it.id==pile.id }
-                                    status="Jordhögen gav +${result.rewardValue} ben"
-                                },onFailure = { status=when {
-                                    it.message?.contains("INSUFFICIENT_BONES")==true -> "Du behöver ${pile.cost} ben"
-                                    it.message?.contains("PILE_ALREADY_CLAIMED")==true -> "En annan spelare hann före"
-                                    else -> "Kunde inte öppna jordhögen"
-                                } }
-                            )
-                        } else {
-                            val result = repository.openPile(pile.id)
-                            if (result.second == null) status = "Du behöver ${pile.cost} ben"
-                            else { piles = result.first; boneCount = repository.boneCount(); status = "Jordhögen gav +${boneValue(result.second!!.type)} ben" }
-                        }
-                    } else status = "Jordhög • kostar ${pile.cost} ben • ${d.toInt()} m"
                 },
                 onPoiTapped={selectedPoi=it},
                 modifier = Modifier.fillMaxSize()
