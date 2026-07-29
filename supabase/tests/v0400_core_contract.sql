@@ -119,6 +119,10 @@ begin
      not like '%public.player_bone_collection%' then
     raise exception 'Flock member collection RPC reads the wrong lifetime collection table';
   end if;
+  if pg_get_functiondef('public.kick_flock_member(uuid,uuid)'::regprocedure)
+     not like '%target_role=''''%' then
+    raise exception 'Flock kick does not reject a missing target member';
+  end if;
 end $$;
 
 rollback;
