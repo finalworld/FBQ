@@ -85,7 +85,8 @@ class WorldRepository(private val client:SupabaseClient) {
                 gte("longitude",center.longitude-lonDelta); lte("longitude",center.longitude+lonDelta)
             }
         }.decodeList<WorldBoneRow>().filter {
-            distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters
+            it.hasValidMapData() &&
+                distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters
         }.map { Bone(it.id,it.latitude,it.longitude,it.boneType) }
         val piles=client.from("dirt_piles").select {
             filter {
@@ -93,7 +94,8 @@ class WorldRepository(private val client:SupabaseClient) {
                 gte("longitude",center.longitude-lonDelta); lte("longitude",center.longitude+lonDelta)
             }
         }.decodeList<DirtPileRow>().filter {
-            distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters
+            it.hasValidMapData() &&
+                distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters
         }.map { DirtPile(it.id,it.latitude,it.longitude,it.cost,it.pileType) }
         return WorldSnapshot(bones,piles)
     }
@@ -132,3 +134,12 @@ class WorldRepository(private val client:SupabaseClient) {
         "open_dirt_pile",buildJsonObject { put("p_pile_id",id) }
     ).decodeSingle()
 }
+
+private fun WorldBoneRow.hasValidMapData():Boolean =
+    id.isNotBlank() && latitude.isFinite() && longitude.isFinite() &&
+        latitude in -90.0..90.0 && longitude in -180.0..180.0 && boneType in 0..11
+
+private fun DirtPileRow.hasValidMapData():Boolean =
+    id.isNotBlank() && latitude.isFinite() && longitude.isFinite() &&
+        latitude in -90.0..90.0 && longitude in -180.0..180.0 &&
+        pileType in 0..4 && cost >= 0
