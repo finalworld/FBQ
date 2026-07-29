@@ -76,7 +76,7 @@ class WorldRepository(private val client:SupabaseClient) {
 
     suspend fun subscribe() { channel.subscribe(blockUntilSubscribed=true) }
 
-    suspend fun loadNearby(center:GeoPoint,radiusMeters:Double=5_000.0):WorldSnapshot {
+    suspend fun loadNearby(center:GeoPoint,radiusMeters:Double=3_000.0):WorldSnapshot {
         val latDelta=radiusMeters/111_320.0
         val lonDelta=radiusMeters/(111_320.0*cos(Math.toRadians(center.latitude)).coerceAtLeast(.05))
         val bones=client.from("world_bones").select {

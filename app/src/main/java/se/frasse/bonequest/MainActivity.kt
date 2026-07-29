@@ -201,7 +201,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     return@start
                 }
                 val nearbyBoneCount = bones.count {
-                    distanceMeters(point.latitude, point.longitude, it.latitude, it.longitude) <= 3_500.0
+                    distanceMeters(point.latitude, point.longitude, it.latitude, it.longitude) <= 3_000.0
                 }
                 if ((!repository.generatedNear(point) || nearbyBoneCount < 20) && !loadingBones) {
                     loadingBones = true
