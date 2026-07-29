@@ -79,6 +79,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     val context = LocalContext.current
     val repository = remember { GameRepository(context) }
     val worldRepository = remember { SupabaseProvider.clientOrNull?.let(::WorldRepository) }
+    val gameApi = remember { SupabaseProvider.clientOrNull?.let(::GameApiRepository) }
     val tracker = remember { LocationTracker(context) }
     val scope = rememberCoroutineScope()
 
@@ -89,6 +90,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var bones by remember { mutableStateOf(if (worldRepository==null) repository.loadBones() else emptyList()) }
     var piles by remember { mutableStateOf(if (worldRepository==null) repository.loadPiles() else emptyList()) }
     var mapPois by remember { mutableStateOf(emptyList<MapPoi>()) }
+    var nearbyPlayers by remember { mutableStateOf(emptyList<NearbyPlayer>()) }
     var boneCount by remember(profile.playerId) { mutableIntStateOf(
         if (worldRepository==null) repository.boneCount()
         else profile.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -97,14 +99,16 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var status by remember { mutableStateOf<String?>("Väntar på GPS…") }
     var followPlayer by remember { mutableStateOf(true) }
     var selectedBone by remember { mutableStateOf<Bone?>(null) }
+    var selectedPile by remember { mutableStateOf<DirtPile?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var profileOpen by remember { mutableStateOf(false) }
+    var currentProfile by remember(profile.playerId) { mutableStateOf(profile) }
+    var activePanel by remember { mutableStateOf<GamePanel?>(null) }
     var collecting by remember { mutableStateOf(false) }
     var lastWorldLoadAt by remember { mutableLongStateOf(0L) }
     var lastWorldCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var gpsHasBeenReady by remember { mutableStateOf(false) }
     var gpsWasInError by remember { mutableStateOf(false) }
-    var startupTestBonePlaced by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionGranted = it
         if (!it) status = "GPS-behörighet behövs för att spela"
@@ -145,6 +149,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 runCatching { server.loadNearby(center) }.onSuccess {
                     bones=it.bones; piles=it.piles
                 }
+                runCatching { server.nearbyPlayers() }.onSuccess { nearbyPlayers=it }
             }
         }
         runCatching { server.subscribe() }
@@ -175,18 +180,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
                         distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>100
                     } ?: true
                     scope.launch {
-                        val presenceUpdated = runCatching { worldRepository.updatePresence(
+                        runCatching { worldRepository.updatePresence(
                             point,location.accuracy,location.bearing,location.speed.takeIf { location.hasSpeed() }
                         ) }.isSuccess
-                        // The server must know the same fresh position before
-                        // the startup test bone is placed. Running these in
-                        // separate coroutines could leave collection checking
-                        // yesterday's stale presence for a few seconds.
-                        if (presenceUpdated && location.accuracy <= 25 && !startupTestBonePlaced) {
-                            startupTestBonePlaced = true
-                            runCatching { worldRepository.placeStartupTestBone(point) }
-                                .onFailure { startupTestBonePlaced = false }
-                        }
                         if (needsReload && System.currentTimeMillis()-lastWorldLoadAt>5_000) {
                             loadingBones=true
                             runCatching { worldRepository.loadNearby(point) }
@@ -235,6 +231,20 @@ internal fun GameScreen(profile:SessionBootstrap) {
         bones.minByOrNull { distanceMeters(p.latitude, p.longitude, it.latitude, it.longitude) }
             ?.takeIf { distanceMeters(p.latitude, p.longitude, it.latitude, it.longitude) <= 25.0 }
     }
+    val nearPile = remember(player,piles) {
+        val p=player?:return@remember null
+        piles.minByOrNull { distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude) }
+            ?.takeIf { distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)<=25.0 }
+    }
+    val nearShop = remember(player,mapPois) {
+        val p=player?:return@remember null
+        mapPois.filter { it.hasGameShop }.minByOrNull { distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude) }
+            ?.takeIf { distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)<=50.0 }
+    }
+    val atHome = remember(player,currentProfile.homeLat,currentProfile.homeLon) {
+        val p=player;val lat=currentProfile.homeLat;val lon=currentProfile.homeLon
+        p!=null&&lat!=null&&lon!=null&&distanceMeters(p.latitude,p.longitude,lat,lon)<=50.0
+    }
     LaunchedEffect(nearBone) { selectedBone = nearBone }
 
     MaterialTheme(colorScheme = darkColorScheme()) {
@@ -244,6 +254,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 bones = bones,
                 piles = piles,
                 pois = mapPois,
+                nearbyPlayers = nearbyPlayers,
                 followPlayer = followPlayer,
                 onManualMove = { followPlayer = false },
                 onBoundsChanged = { bounds ->
@@ -261,7 +272,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     }
                     status = "${BONE_NAMES[bone.type.coerceIn(BONE_NAMES.indices)].uppercase()}  •  VÄRDE ${boneValue(bone.type)}  •  ${distance?.let { "$it M" } ?: "OKÄNT AVSTÅND"}"
                 },
-                onPlayerTapped = { profileOpen = true },
+                onPlayerTapped = { activePanel = GamePanel.PROFILE },
                 onPileTapped = { pile ->
                     val p = player
                     val d = if (p == null) 9999.0 else distanceMeters(p.latitude,p.longitude,pile.latitude,pile.longitude)
@@ -359,6 +370,27 @@ internal fun GameScreen(profile:SessionBootstrap) {
             }
 
             val statusText = if (loadingBones) "Letar gångstigar…" else status
+            nearPile?.let { pile ->
+                val pileOffset=if(nearBone!=null)92.dp else 22.dp
+                Box(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=pileOffset)
+                    .widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp)
+                    .clickable(enabled=boneCount>=pile.cost&&!collecting){
+                        collecting=true;scope.launch{
+                            if(worldRepository!=null) runCatching{worldRepository.openPile(pile.id)}.fold(
+                                onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};status="Jordhögen gav +${r.rewardValue} ben${if(r.isDouble)" • DUBBELVINST!" else ""}"},
+                                onFailure={status=if(it.message?.contains("PILE_ALREADY_CLAIMED")==true)"En annan spelare hann före" else "Kunde inte gräva upp högen"})
+                            collecting=false;selectedPile=null
+                        }
+                    }) { ActionButtonContent(dirtDrawable(pile.type),if(boneCount>=pile.cost)"GRÄV UPP" else "BEHÖVER ${pile.cost} BEN","KOSTAR ${pile.cost} BEN") }
+            }
+            nearShop?.let { shop ->
+                val index=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)
+                Box(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=(22+70*index).dp).widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp).clickable{activePanel=GamePanel.SHOP}) { ActionButtonContent(R.drawable.poi_pet_shop,"BESÖK BUTIK",shop.name?:"HUNDBUTIK") }
+            }
+            if(atHome) {
+                val index=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)+(if(nearShop!=null)1 else 0)
+                Box(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=(22+70*index).dp).widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp).clickable{activePanel=GamePanel.HOME}) { ActionButtonContent(R.drawable.marker_default_paw,"BESÖK HEMMET","FRASSES HEMMAAUTOMAT") }
+            }
             if (statusText != null) {
                 Surface(
                     modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
@@ -389,7 +421,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             }, confirmButton={TextButton(onClick={profileOpen=false}){Text("STÄNG")}})
         }
 
-        if (menuOpen) {
+        if (menuOpen && gameApi == null) {
             AlertDialog(
                 onDismissRequest = { menuOpen = false },
                 title = { Text("Frasse’s Bone Quest") },
@@ -406,6 +438,26 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 },
                 dismissButton = { TextButton(onClick = { menuOpen = false }) { Text("TILLBAKA") } }
             )
+        }
+        if (menuOpen && gameApi != null) {
+            GameMenu(
+                profile=currentProfile.copy(boneCount=boneCount.toLong()),
+                onClose={menuOpen=false},onOpen={activePanel=it;menuOpen=false},
+                onQuit={(context as? Activity)?.finishAffinity()}
+            )
+        }
+        activePanel?.let { panel ->
+            gameApi?.let { api ->
+                val nearbyShop=mapPois.firstOrNull { poi -> poi.hasGameShop && player?.let { p ->
+                    distanceMeters(p.latitude,p.longitude,poi.latitude,poi.longitude)<=50
+                }==true }
+                GamePanelScreen(
+                    panel=panel,profile=currentProfile.copy(boneCount=boneCount.toLong()),api=api,
+                    shopPoi=nearbyShop,onClose={activePanel=null},
+                    onBalance={balance->boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=balance)},
+                    onProfile={fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()}
+                )
+            }
         }
     }
 }
@@ -493,9 +545,14 @@ private fun ActionButtonContent(iconDrawable:Int,label:String,detail:String) {
     }
 }
 
+private fun dirtDrawable(type:Int)=intArrayOf(
+    R.drawable.dirt_pile_01,R.drawable.dirt_pile_02,R.drawable.dirt_pile_03,
+    R.drawable.dirt_pile_04,R.drawable.dirt_pile_05
+)[type.coerceIn(0,4)]
+
 @Composable
 private fun GameMap(
-    player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, pois: List<MapPoi>, followPlayer: Boolean,
+    player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, pois: List<MapPoi>, nearbyPlayers:List<NearbyPlayer>, followPlayer: Boolean,
     onManualMove: () -> Unit, onBoundsChanged: (MapBounds) -> Unit, onBoneTapped: (Bone) -> Unit,
     onPlayerTapped: () -> Unit, onPileTapped: (DirtPile) -> Unit, modifier: Modifier
 ) {
@@ -626,6 +683,11 @@ private fun GameMap(
         source.setGeoJson(pileFeatureCollection(piles))
     }
 
+    LaunchedEffect(map,styleReady,nearbyPlayers) {
+        val source=map?.style?.getSourceAs<GeoJsonSource>(NEARBY_PLAYER_SOURCE_ID)?:return@LaunchedEffect
+        source.setGeoJson(nearbyPlayerFeatureCollection(nearbyPlayers))
+    }
+
     LaunchedEffect(map, styleReady, pois) {
         val m = map ?: return@LaunchedEffect
         if (!styleReady) return@LaunchedEffect
@@ -637,6 +699,8 @@ private fun GameMap(
 private const val PLAYER_SOURCE_ID = "frasse-player-source"
 private const val PLAYER_LAYER_ID = "frasse-player-layer"
 private const val PLAYER_IMAGE_ID = "frasse-player-image"
+private const val NEARBY_PLAYER_SOURCE_ID="frasse-nearby-players-source"
+private const val NEARBY_PLAYER_LAYER_ID="frasse-nearby-players-layer"
 private const val BONE_SOURCE_ID = "frasse-bones-source"
 private const val PILE_SOURCE_ID = "frasse-piles-source"
 private const val PILE_ID_PROPERTY = "pileId"
@@ -713,6 +777,13 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
     poiDrawables.forEachIndexed { index, id ->
         BitmapFactory.decodeResource(context.resources, id)?.let { style.addImage(POI_IMAGE_IDS[index], it) }
     }
+    if(style.getSource(NEARBY_PLAYER_SOURCE_ID)==null) style.addSource(GeoJsonSource(NEARBY_PLAYER_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
+    if(style.getLayer(NEARBY_PLAYER_LAYER_ID)==null) style.addLayerBelow(
+        SymbolLayer(NEARBY_PLAYER_LAYER_ID,NEARBY_PLAYER_SOURCE_ID).withProperties(
+            PropertyFactory.iconImage(PLAYER_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(.55f)
+        ),PLAYER_LAYER_ID
+    )
     if (style.getSource(POI_SOURCE_ID) == null) {
         style.addSource(GeoJsonSource(POI_SOURCE_ID, FeatureCollection.fromFeatures(emptyArray<Feature>())))
     }
@@ -734,6 +805,12 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
 }
 
 private fun pileFeatureCollection(piles: List<DirtPile>): FeatureCollection = FeatureCollection.fromFeatures(piles.map { pile -> Feature.fromGeometry(Point.fromLngLat(pile.longitude,pile.latitude)).apply { addStringProperty(PILE_ID_PROPERTY,pile.id); addNumberProperty("pileType",pile.type.coerceIn(0,4)) } })
+
+private fun nearbyPlayerFeatureCollection(players:List<NearbyPlayer>):FeatureCollection=FeatureCollection.fromFeatures(
+    players.map { player->Feature.fromGeometry(Point.fromLngLat(player.longitude,player.latitude)).apply {
+        addStringProperty("playerId",player.playerId);addNumberProperty("sharedFlocks",player.sharedFlockIds.size)
+    }}
+)
 
 private fun poiFeatureCollection(pois: List<MapPoi>): FeatureCollection = FeatureCollection.fromFeatures(
     pois.map { poi ->

@@ -6,6 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
@@ -13,6 +17,9 @@ import kotlinx.coroutines.*
 import se.frasse.bonequest.MainActivity
 import se.frasse.bonequest.R
 import se.frasse.bonequest.SupabaseProvider
+import se.frasse.bonequest.GeoPoint
+import se.frasse.bonequest.WorldRepository
+import kotlinx.coroutines.flow.first
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -25,6 +32,8 @@ class WalkingLocationService : Service() {
     private var pendingMeters=0.0
     private var batchStartedAt=0L
     private var sessionMeters=0.0
+    private var nearbyBones=0
+    private var insideBoneZone=false
 
     private val callback=object:LocationCallback() {
         override fun onLocationResult(result:LocationResult) {
@@ -43,6 +52,13 @@ class WalkingLocationService : Service() {
                 serviceScope.launch {
                     SupabaseProvider.clientOrNull?.let { client ->
                         runCatching { DistanceSyncRepository(client).updatePresence(sample,location.bearing,true) }
+                        runCatching { WorldRepository(client).loadNearby(GeoPoint(sample.latitude,sample.longitude),40.0) }
+                            .onSuccess { world ->
+                                nearbyBones=world.bones.size
+                                if(nearbyBones>0&&!insideBoneZone){insideBoneZone=true;alertForBone()}
+                                if(nearbyBones==0)insideBoneZone=false
+                                updateNotification()
+                            }
                     }
                 }
             }
@@ -112,13 +128,28 @@ class WalkingLocationService : Service() {
         return NotificationCompat.Builder(this,CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle(getString(R.string.walking_notification_title))
-            .setContentText(getString(R.string.walking_notification_distance,km))
+            .setContentText(getString(R.string.walking_notification_status,km,nearbyBones))
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
             .addAction(0,getString(R.string.walking_notification_stop),stop).build()
     }
 
     private fun updateNotification() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID,buildNotification())
+    }
+
+    private suspend fun alertForBone() {
+        val preferences=WalkingPreferences(this)
+        if(preferences.vibrationEnabled.first()) {
+            getSystemService(Vibrator::class.java)?.vibrate(VibrationEffect.createOneShot(450,VibrationEffect.DEFAULT_AMPLITUDE))
+        }
+        if(preferences.barkEnabled.first()) {
+            withContext(Dispatchers.Main) {
+                ToneGenerator(AudioManager.STREAM_NOTIFICATION,80).also { tone ->
+                    tone.startTone(ToneGenerator.TONE_PROP_BEEP2,180)
+                    serviceScope.launch { delay(230);withContext(Dispatchers.Main){tone.startTone(ToneGenerator.TONE_PROP_BEEP2,220)};delay(260);tone.release() }
+                }
+            }
+        }
     }
 
     companion object {

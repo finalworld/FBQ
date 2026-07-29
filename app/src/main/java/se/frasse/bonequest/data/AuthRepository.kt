@@ -17,9 +17,20 @@ data class SessionBootstrap(
     @SerialName("display_name") val displayName: String,
     @SerialName("onboarding_complete") val onboardingComplete: Boolean,
     @SerialName("bone_count") val boneCount: Long,
+    @SerialName("total_meters") val totalMeters: Long = 0,
+    @SerialName("total_bones") val totalBones: Long = 0,
+    @SerialName("total_piles") val totalPiles: Long = 0,
+    @SerialName("active_marker_id") val activeMarkerId: String = "marker_paw_standard",
+    @SerialName("home_lat") val homeLat: Double? = null,
+    @SerialName("home_lon") val homeLon: Double? = null,
+    @SerialName("home_changed_at") val homeChangedAt: String? = null,
+    @SerialName("walking_mode_enabled") val walkingModeEnabled: Boolean = false,
+    @SerialName("bark_enabled") val barkEnabled: Boolean = true,
+    @SerialName("vibration_enabled") val vibrationEnabled: Boolean = true,
     @SerialName("is_admin") val isAdmin: Boolean,
     @SerialName("is_suspended") val isSuspended: Boolean,
-    @SerialName("requires_new_name") val requiresNewName: Boolean
+    @SerialName("requires_new_name") val requiresNewName: Boolean,
+    @SerialName("created_at") val createdAt: String = ""
 )
 
 class AuthRepository(private val client: SupabaseClient) {
