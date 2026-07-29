@@ -131,6 +131,10 @@ begin
      not like '%60 seconds%' then
     raise exception 'Home placement GPS freshness window differs from the tested client flow';
   end if;
+  if pg_get_functiondef('private.maintain_world_bones(double precision,double precision)'::regprocedure)
+     not like '%10 hours%' then
+    raise exception 'System bones do not refresh after ten uncollected hours';
+  end if;
 end $$;
 
 rollback;
