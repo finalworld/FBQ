@@ -114,7 +114,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
         else profile.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     ) }
     var loadingBones by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf<String?>("Väntar på GPS…") }
+    var status by remember { mutableStateOf<String?>(context.getString(R.string.status_waiting_gps)) }
     var followPlayer by remember { mutableStateOf(true) }
     var selectedBone by remember { mutableStateOf<Bone?>(null) }
     var selectedPile by remember { mutableStateOf<DirtPile?>(null) }
@@ -380,7 +380,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     val distance = player?.let { p ->
                         distanceMeters(p.latitude, p.longitude, bone.latitude, bone.longitude).toInt()
                     }
-                    status = context.getString(R.string.bone_tap_info,BONE_NAMES[bone.type.coerceIn(BONE_NAMES.indices)].uppercase(),boneValue(bone.type),distance?.let { context.getString(R.string.distance_meters_short,it) } ?: context.getString(R.string.unknown_distance))
+                    status = context.getString(R.string.bone_tap_info,localizedBoneName(context,bone.type).uppercase(),boneValue(bone.type),distance?.let { context.getString(R.string.distance_meters_short,it) } ?: context.getString(R.string.unknown_distance))
                 },
                 onPlayerTapped = { activePanel = GamePanel.PROFILE },
                 onEmptyMapTapped = { point -> if(adminMapMode) adminPlacement=point },
@@ -578,7 +578,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
         }
         selectedPoi?.let { poi ->
             val distance=player?.let{distanceMeters(it.latitude,it.longitude,poi.latitude,poi.longitude).toInt()}
-            AlertDialog(onDismissRequest={selectedPoi=null},title={Text(poi.name?:poiTypeName(poi.poiType))},text={Column(verticalArrangement=Arrangement.spacedBy(5.dp)){Text(poiTypeName(poi.poiType));poi.address?.let{Text(it)};poi.openingHours?.let{Text(stringResource(R.string.poi_opening_hours,it))};poi.phone?.let{Text(stringResource(R.string.poi_phone,it))};poi.website?.let{Text(it,color=androidx.compose.ui.graphics.Color(0xFF5BC8C5))};Text(stringResource(R.string.poi_distance,distance?:0));if(poi.hasGameShop)Text(stringResource(R.string.ui_text_031),fontWeight=FontWeight.Bold)}},confirmButton={Button(onClick={val uri=Uri.parse("geo:${poi.latitude},${poi.longitude}?q=${poi.latitude},${poi.longitude}(${Uri.encode(poi.name?:context.getString(R.string.poi_fallback_name))})");context.startActivity(Intent(Intent.ACTION_VIEW,uri));selectedPoi=null}){Text(stringResource(R.string.ui_text_080))}},dismissButton={TextButton(onClick={selectedPoi=null}){Text(stringResource(R.string.ui_text_064))}})
+            AlertDialog(onDismissRequest={selectedPoi=null},title={Text(poi.name?:poiTypeName(context,poi.poiType))},text={Column(verticalArrangement=Arrangement.spacedBy(5.dp)){Text(poiTypeName(context,poi.poiType));poi.address?.let{Text(it)};poi.openingHours?.let{Text(stringResource(R.string.poi_opening_hours,it))};poi.phone?.let{Text(stringResource(R.string.poi_phone,it))};poi.website?.let{Text(it,color=androidx.compose.ui.graphics.Color(0xFF5BC8C5))};Text(stringResource(R.string.poi_distance,distance?:0));if(poi.hasGameShop)Text(stringResource(R.string.ui_text_031),fontWeight=FontWeight.Bold)}},confirmButton={Button(onClick={val uri=Uri.parse("geo:${poi.latitude},${poi.longitude}?q=${poi.latitude},${poi.longitude}(${Uri.encode(poi.name?:context.getString(R.string.poi_fallback_name))})");context.startActivity(Intent(Intent.ACTION_VIEW,uri));selectedPoi=null}){Text(stringResource(R.string.ui_text_080))}},dismissButton={TextButton(onClick={selectedPoi=null}){Text(stringResource(R.string.ui_text_064))}})
         }
         if(homeInfoOpen){
             val homeDistance=player?.let{p->currentProfile.homeLat?.let{lat->currentProfile.homeLon?.let{lon->distanceMeters(p.latitude,p.longitude,lat,lon).toInt()}}}
@@ -586,7 +586,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             AlertDialog(onDismissRequest={homeInfoOpen=false},title={Text(stringResource(R.string.ui_text_042))},text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text(stringResource(R.string.home_distance,homeDistance?.let{"$it m"}?:stringResource(R.string.home_distance_unknown)));Text(stringResource(if(atHome)R.string.home_available_here else R.string.home_locked_distance));nextMove?.let{Text(stringResource(R.string.home_next_move,it))}}},confirmButton={if(atHome)Button(onClick={homeInfoOpen=false;activePanel=GamePanel.HOME}){Text(stringResource(R.string.ui_text_010))}else TextButton(onClick={homeInfoOpen=false}){Text(stringResource(R.string.ui_text_064))}})
         }
         adminPlacement?.let { point ->
-            var objectType by remember(point){mutableStateOf("bone")};var variant by remember(point){mutableStateOf("0")};var reason by remember(point){mutableStateOf("Manuell kartplacering")};var busy by remember(point){mutableStateOf(false)};var confirmed by remember(point){mutableStateOf(false)}
+            var objectType by remember(point){mutableStateOf("bone")};var variant by remember(point){mutableStateOf("0")};var reason by remember(point){mutableStateOf(context.getString(R.string.admin_manual_map_reason))};var busy by remember(point){mutableStateOf(false)};var confirmed by remember(point){mutableStateOf(false)}
             AlertDialog(onDismissRequest={if(!busy)adminPlacement=null},title={Text(stringResource(R.string.ui_text_055))},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("${"%.6f".format(point.latitude)}, ${"%.6f".format(point.longitude)}");Row{FilterChip(objectType=="bone",{objectType="bone";confirmed=false},label={Text(stringResource(R.string.ui_text_009))});Spacer(Modifier.width(8.dp));FilterChip(objectType=="pile",{objectType="pile";confirmed=false},label={Text(stringResource(R.string.ui_text_033))})};OutlinedTextField(variant,{variant=it.filter(Char::isDigit).take(2);confirmed=false},label={Text(stringResource(if(objectType=="bone")R.string.admin_bone_type_range else R.string.admin_pile_type_range))});OutlinedTextField(reason,{reason=it;confirmed=false},label={Text(stringResource(R.string.ui_text_052))});if(confirmed)Text(stringResource(R.string.admin_placement_warning),color=androidx.compose.ui.graphics.Color(0xFFFFC85B))}},confirmButton={Button(enabled=!busy&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={if(!confirmed){confirmed=true}else{busy=true;scope.launch{runCatching{gameApi?.adminPlaceObject(objectType,point.latitude,point.longitude,variant.toInt(),reason)}.onSuccess{status=context.getString(R.string.admin_object_placed_status);adminPlacement=null}.onFailure{status=context.getString(R.string.admin_place_failed_status,it.message.orEmpty());busy=false}}}}){Text(stringResource(if(confirmed)R.string.admin_place_anyway else R.string.admin_preview_update))}},dismissButton={TextButton(onClick={adminPlacement=null}){Text(stringResource(R.string.ui_text_006))}})
         }
     }
@@ -1016,7 +1016,7 @@ private fun poiFeatureCollection(pois: List<MapPoi>): FeatureCollection = Featur
     }
 )
 
-private fun poiTypeName(type:String)=when(type){"dog_park"->"Hundrastgård";"pet_shop"->"Djurbutik";"veterinary"->"Veterinär";"grooming"->"Hundtrim";else->"Hundtvätt"}
+private fun poiTypeName(context:android.content.Context,type:String)=context.getString(when(type){"dog_park"->R.string.poi_type_dog_park;"pet_shop"->R.string.poi_type_pet_shop;"veterinary"->R.string.poi_type_veterinary;"grooming"->R.string.poi_type_grooming;else->R.string.poi_type_dog_wash})
 
 private fun playerFeatureCollection(player: GeoPoint?): FeatureCollection {
     if (player == null) return FeatureCollection.fromFeatures(emptyArray<Feature>())

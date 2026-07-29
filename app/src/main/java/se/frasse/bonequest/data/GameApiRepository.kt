@@ -116,6 +116,7 @@ class GameApiRepository(private val client:SupabaseClient) {
     suspend fun adminSuspend(playerId:String,reason:String) = client.postgrest.rpc("admin_set_suspension",buildJsonObject { put("p_player_id",playerId);put("p_until",kotlinx.serialization.json.JsonNull);put("p_permanent",true);put("p_reason",reason) })
     suspend fun adminUnsuspend(playerId:String,reason:String) = client.postgrest.rpc("admin_clear_suspension",buildJsonObject { put("p_player_id",playerId);put("p_reason",reason) })
     suspend fun adminForceName(playerId:String,name:String,reason:String) = client.postgrest.rpc("admin_force_player_name",buildJsonObject { put("p_player_id",playerId);put("p_new_name",name);put("p_require_new_name",false);put("p_reason",reason) })
+    suspend fun adminForceFlockName(flockId:String,name:String,reason:String) = client.postgrest.rpc("admin_force_flock_name",buildJsonObject { put("p_flock_id",flockId);put("p_new_name",name);put("p_reason",reason) })
     suspend fun adminSetItem(playerId:String,itemId:String,grant:Boolean,reason:String) = client.postgrest.rpc("admin_set_player_item",buildJsonObject { put("p_player_id",playerId);put("p_item_id",itemId);put("p_grant",grant);put("p_reason",reason) })
     suspend fun adminPlaceObject(type:String,latitude:Double,longitude:Double,variant:Int,reason:String,objectId:String?=null) = client.postgrest.rpc("admin_upsert_world_object",buildJsonObject {
         if(objectId.isNullOrBlank()) put("p_object_id",kotlinx.serialization.json.JsonNull) else put("p_object_id",objectId)

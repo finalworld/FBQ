@@ -293,4 +293,24 @@
     <string name="poi_type_veterinary">Veterinär</string>
     <string name="poi_type_grooming">Hundtrim</string>
     <string name="poi_type_dog_wash">Hundtvätt</string>
+    <string name="status_waiting_gps">Väntar på GPS…</string>
+    <string name="admin_manual_map_reason">Manuell kartplacering</string>
+    <string name="bone_name_0">Sprucket</string>
+    <string name="bone_name_1">Slitet</string>
+    <string name="bone_name_2">Mossigt</string>
+    <string name="bone_name_3">Polerat</string>
+    <string name="bone_name_4">Rent</string>
+    <string name="bone_name_5">Kristallben</string>
+    <string name="bone_name_6">Magiskt</string>
+    <string name="bone_name_7">Gyllene</string>
+    <string name="bone_name_8">Safir</string>
+    <string name="bone_name_9">Diamant</string>
+    <string name="bone_name_10">Prismaben</string>
+    <string name="bone_name_11">Frasses kungaben</string>
+    <string name="admin_tab_flocks">FLOCKAR</string>
+    <string name="admin_flock_id">Flock-ID</string>
+    <string name="admin_new_flock_name">Nytt flocknamn</string>
+    <string name="admin_flock_name_changed">Flocknamnet ändrades.</string>
+    <string name="admin_flock_name_failed">Flocknamnet kunde inte ändras.</string>
+    <string name="admin_flock_help">Rätta ett olämpligt flocknamn. Åtgärden loggas och kräver flockens ID.</string>
 </resources>
