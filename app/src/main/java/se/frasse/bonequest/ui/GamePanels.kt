@@ -136,7 +136,7 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
     LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){items(items){item->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A)).clickable(enabled=!busy&&!item.equipped){busy=true;scope.launch{runCatching{api.equip(item.itemId)};onProfile(api.bootstrap());reload();busy=false}}.padding(13.dp)){Text(item.nameSv,Modifier.weight(1f),color=PanelCream);Text(if(item.equipped)"UTRUSTAD" else "VÄLJ",color=if(item.equipped)PanelTeal else PanelGold,fontWeight=FontWeight.Bold)}}}
 }
 
-@Composable private fun HomePanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit) {
+@Composable private fun LegacyHomePanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit) {
     val scope=rememberCoroutineScope();var result by remember{mutableStateOf("Automaten kan användas inom 50 meter från hemmet.")};var spinning by remember{mutableStateOf(false)}
     Column(verticalArrangement=Arrangement.spacedBy(13.dp)) {
         Text(if(profile.homeLat==null)"Du har inte valt hem ännu." else "Ditt hem är sparat.",color=PanelCream,fontSize=18.sp)
@@ -145,6 +145,19 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
         Text(result,color=PanelCream)
         Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){listOf(1,2,5,10).forEach{stake->Button(enabled=!spinning,onClick={spinning=true;scope.launch{runCatching{api.spinHome(stake)}.onSuccess{result=if(it.payout==0)"Ingen vinst den här gången." else "Vinst! ${it.payout} ben (${it.multiplier}×)";onBalance(it.balance)}.onFailure{result="Automaten kan bara användas hemma med bra GPS."};delay(5000);spinning=false}}){Text("$stake")}}}
         if(spinning) LinearProgressIndicator(Modifier.fillMaxWidth(),color=PanelGold)
+    }
+}
+
+@Composable private fun HomePanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit){
+    val scope=rememberCoroutineScope();var message by remember{mutableStateOf("Automaten kan användas inom 50 meter från hemmet.")};var pending by remember{mutableStateOf<SlotResult?>(null)};var revealed by remember{mutableStateOf(true)};var error by remember{mutableStateOf(false)}
+    fun reveal(){pending?.let{r->message=if(r.payout==0)"Ingen vinst den här gången." else "Vinst! ${r.payout} ben (${r.multiplier}×)";onBalance(r.balance)};revealed=true;pending=null}
+    LaunchedEffect(pending?.spinId){if(pending!=null){delay(5000);reveal()}}
+    Column(verticalArrangement=Arrangement.spacedBy(13.dp)){
+        Text(if(profile.homeLat==null)"Du har inte valt hem ännu." else "Ditt hem är sparat och syns med en husikon på kartan.",color=PanelCream,fontSize=18.sp)
+        Button(enabled=pending==null,onClick={scope.launch{runCatching{api.setHome()}.onSuccess{message="Hemmet sparades. Nästa flytt är möjlig om 24 timmar.";onProfile(api.bootstrap())}.onFailure{message="Hemmet kunde inte flyttas. Kontrollera GPS och cooldown."}}},modifier=Modifier.fillMaxWidth()){Text("SÄTT MITT HEM HÄR")}
+        HorizontalDivider();Text("FRASSES HEMMAAUTOMAT",color=PanelGold,fontWeight=FontWeight.Black,fontSize=20.sp);Text(message,color=if(error)Color(0xFFFF6B5D) else PanelCream)
+        if(pending==null)Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){listOf(1,2,5,10).forEach{stake->Button(onClick={scope.launch{error=false;runCatching{api.spinHome(stake)}.onSuccess{pending=it;revealed=false;message="🐾 Automaten snurrar…"}.onFailure{error=true;message="Automaten kräver att du är hemma, har bra GPS och tillräckligt med ben."}}}){Text("$stake")}}}
+        else Column(horizontalAlignment=Alignment.CenterHorizontally){LinearProgressIndicator(Modifier.fillMaxWidth(),color=PanelGold);Spacer(Modifier.height(12.dp));Text("🦴  🐾  🎾  🦴  🐾",fontSize=27.sp);TextButton(onClick={reveal()}){Text("HOPPA ÖVER")}}
     }
 }
 
@@ -171,13 +184,64 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 }
 @Composable private fun SettingToggle(title:String,help:String,value:Boolean,onChange:(Boolean)->Unit){Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(title,color=PanelCream,fontWeight=FontWeight.Bold);Text(help,color=PanelCream.copy(alpha=.65f),fontSize=12.sp)};Switch(value,onChange)}}
 
-@Composable private fun FlocksPanel(api:GameApiRepository,onBalance:(Long)->Unit) {
+@Composable private fun LegacyFlocksPanel(api:GameApiRepository,onBalance:(Long)->Unit) {
     val scope=rememberCoroutineScope();var tab by remember{mutableIntStateOf(0)};var mine by remember{mutableStateOf<List<MyFlock>>(emptyList())};var all by remember{mutableStateOf<List<FlockSummary>>(emptyList())};var selected by remember{mutableStateOf<MyFlock?>(null)};var members by remember{mutableStateOf<List<FlockMember>>(emptyList())};var name by remember{mutableStateOf("")};var message by remember{mutableStateOf<String?>(null)}
     fun reload(){scope.launch{mine=runCatching{api.myFlocks()}.getOrDefault(emptyList());all=runCatching{api.listFlocks()}.getOrDefault(emptyList())}}
     LaunchedEffect(Unit){reload()}
     selected?.let{flock->Column{Text(flock.name,color=PanelGold,fontSize=24.sp,fontWeight=FontWeight.Black);Text("Flockbank: %.1f ben • ${flock.memberCount} medlemmar".format(flock.bankBalance),color=PanelCream);Button(onClick={selected=null}){Text("TILL FLOKKLISTAN")};LazyColumn{items(members){m->Column(Modifier.fillMaxWidth().padding(9.dp)){Text(m.displayName,color=PanelCream,fontWeight=FontWeight.Bold);Text("${roleName(m.role)} • %.2f km • ${m.boneBalance} ben".format(m.totalMeters/1000.0),color=PanelGold,fontSize=12.sp)}}}}};if(selected!=null)return
     Column{TabRow(tab){Tab(tab==0,{tab=0},text={Text("MINA")});Tab(tab==1,{tab=1},text={Text("ALLA")});Tab(tab==2,{tab=2},text={Text("SKAPA")})};message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(8.dp))};when(tab){0->LazyColumn{items(mine){f->Row(Modifier.fillMaxWidth().clickable{selected=f;scope.launch{members=api.members(f.flockId)}}.padding(12.dp)){Text("🐾",fontSize=26.sp);Column(Modifier.padding(start=9.dp)){Text(f.name,color=PanelCream,fontWeight=FontWeight.Bold);Text("${roleName(f.myRole)} • ${f.memberCount} • bank %.1f".format(f.bankBalance),color=PanelGold,fontSize=12.sp)}}}};1->LazyColumn{items(all){f->Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically){Text("🐾 ${f.name}",Modifier.weight(1f),color=PanelCream);Text("${f.memberCount}",color=PanelGold);TextButton(enabled=mine.none{it.flockId==f.flockId}&&mine.size<3,onClick={scope.launch{runCatching{api.applyToFlock(f.flockId)}.onSuccess{message="Ansökan skickad"}.onFailure{message="Ansökan kunde inte skickas"}}}){Text("GÅ MED")}}}};else->Column(Modifier.padding(top=15.dp)){Text("Det kostar 500 ben att skapa en flock.",color=PanelCream);OutlinedTextField(name,{name=it.take(24)},Modifier.fillMaxWidth(),label={Text("Unikt flocknamn")});Button(onClick={scope.launch{runCatching{api.createFlock(name)}.onSuccess{message="Flocken skapades!";reload();tab=0}.onFailure{message="Namnet är upptaget, ogiltigt eller saldot för lågt."}}},modifier=Modifier.fillMaxWidth()){Text("SKAPA FLOCK")}}}}
 }
+@Composable private fun FlocksPanel(api:GameApiRepository,onBalance:(Long)->Unit) {
+    val scope=rememberCoroutineScope()
+    var mine by remember{mutableStateOf<List<MyFlock>>(emptyList())}
+    var publicFlocks by remember{mutableStateOf<List<FlockSummary>>(emptyList())}
+    var selected by remember{mutableStateOf<MyFlock?>(null)}
+    var members by remember{mutableStateOf<List<FlockMember>>(emptyList())}
+    var applications by remember{mutableStateOf<List<FlockApplication>>(emptyList())}
+    var ledger by remember{mutableStateOf<List<FlockLedgerEntry>>(emptyList())}
+    var tab by remember{mutableIntStateOf(0)}
+    var detailTab by remember{mutableIntStateOf(0)}
+    var name by remember{mutableStateOf("")}
+    var message by remember{mutableStateOf<String?>(null)}
+    var confirmDelete by remember{mutableStateOf(false)}
+
+    suspend fun reloadLists(){mine=api.myFlocks();publicFlocks=api.listFlocks()}
+    suspend fun reloadDetail(f:MyFlock){
+        members=api.members(f.flockId)
+        ledger=api.ledger(f.flockId)
+        applications=if(f.myRole in listOf("leader","guard")) runCatching{api.applications(f.flockId)}.getOrDefault(emptyList()) else emptyList()
+        selected=api.myFlocks().firstOrNull{it.flockId==f.flockId}?:f
+    }
+    LaunchedEffect(Unit){runCatching{reloadLists()}.onFailure{message="Kunde inte hämta flockarna."}}
+
+    val flock=selected
+    if(flock!=null){
+        Column {
+            Row(verticalAlignment=Alignment.CenterVertically){TextButton(onClick={selected=null}){Text("‹ LISTAN")};Column{Text(flock.name,color=PanelGold,fontSize=23.sp,fontWeight=FontWeight.Black);Text("${roleName(flock.myRole)} • ${flock.memberCount} medlemmar • bank %.1f".format(flock.bankBalance),color=PanelCream,fontSize=12.sp)}}
+            TabRow(detailTab){listOf("MEDLEMMAR","ANSÖKNINGAR","BANK","HANTERA").forEachIndexed{i,t->Tab(detailTab==i,{detailTab=i},text={Text(t,fontSize=9.sp)})}}
+            message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(8.dp))}
+            when(detailTab){
+                0->LazyColumn{items(members){m->Column(Modifier.fillMaxWidth().background(Color(0xFF20282A)).padding(10.dp)){Text(m.displayName,color=PanelCream,fontWeight=FontWeight.Bold);Text("${roleName(m.role)} • %.2f km • ${m.boneBalance} ben • ${m.totalBones} hittade • ${m.totalPiles} högar".format(m.totalMeters/1000.0),color=PanelGold,fontSize=11.sp);if(flock.myRole=="leader"&&m.role!="leader")Row{TextButton(onClick={scope.launch{runCatching{api.setGuard(flock.flockId,m.playerId,m.role!="guard")}.onSuccess{reloadDetail(flock)}}}){Text(if(m.role=="guard")"GÖR MEDLEM" else "GÖR VAKT")};TextButton(onClick={scope.launch{runCatching{api.transfer(flock.flockId,m.playerId)}.onSuccess{reloadLists();selected=null}}}){Text("GÖR LEDARE")}};if((flock.myRole=="leader"&&m.role!="leader")||(flock.myRole=="guard"&&m.role=="member"))TextButton(onClick={scope.launch{runCatching{api.kick(flock.flockId,m.playerId)}.onSuccess{reloadDetail(flock)}}}){Text("SPARKA",color=Color(0xFFFF6B5D))}}}}
+                1->if(flock.myRole !in listOf("leader","guard"))Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text("Endast ledare och vakter ser ansökningar.",color=PanelCream)}else LazyColumn{items(applications){a->Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically){Text(a.displayName,Modifier.weight(1f),color=PanelCream);TextButton(onClick={scope.launch{runCatching{api.decideApplication(flock.flockId,a.playerId,true)}.onSuccess{reloadDetail(flock)}}}){Text("GODKÄNN")};TextButton(onClick={scope.launch{runCatching{api.decideApplication(flock.flockId,a.playerId,false)}.onSuccess{reloadDetail(flock)}}}){Text("NEKA")}}}}
+                2->LazyColumn{item{Text("Flockbank: %.1f ben".format(flock.bankBalance),color=PanelGold,fontSize=20.sp,fontWeight=FontWeight.Bold);Text("10 % bonus från lösa ben. Ditt eget benvärde minskar inte.",color=PanelCream,fontSize=12.sp)};items(ledger){e->Row(Modifier.fillMaxWidth().padding(vertical=7.dp)){Column(Modifier.weight(1f)){Text(e.actorName,color=PanelCream);Text(e.reason,color=PanelCream.copy(alpha=.6f),fontSize=11.sp)};Text("%+.1f".format(e.amount),color=if(e.amount>=0)PanelTeal else Color(0xFFFF6B5D),fontWeight=FontWeight.Bold)}}}
+                else->Column(verticalArrangement=Arrangement.spacedBy(9.dp)){if(flock.myRole=="leader"){Text("Byt namn: 500 flockben, 7 dygns cooldown.",color=PanelCream);OutlinedTextField(name,{name=it.take(24)},Modifier.fillMaxWidth(),label={Text("Nytt unikt namn")});Button(onClick={scope.launch{runCatching{api.renameFlock(flock.flockId,name)}.onSuccess{message="Flocken döptes om.";reloadLists();reloadDetail(flock)}.onFailure{message="Namnbytet gick inte. Kontrollera bank, namn och cooldown."}}},modifier=Modifier.fillMaxWidth()){Text("BYT NAMN")};Text("Överför ledarskapet under Medlemmar innan du lämnar.",color=PanelCream,fontSize=12.sp);if(flock.memberCount==1L)TextButton(onClick={confirmDelete=true}){Text("TA BORT TOM FLOCK",color=Color(0xFFFF6B5D))}}else Button(onClick={scope.launch{runCatching{api.leave(flock.flockId)}.onSuccess{selected=null;reloadLists()}}},modifier=Modifier.fillMaxWidth()){Text("LÄMNA FLOCKEN")}}
+            }
+        }
+        if(confirmDelete)AlertDialog(onDismissRequest={confirmDelete=false},title={Text("Ta bort ${flock.name}?")},text={Text("Detta går inte att ångra. Flocken måste bara ha dig som medlem.")},confirmButton={Button(onClick={scope.launch{runCatching{api.deleteFlock(flock.flockId,flock.name)}.onSuccess{selected=null;reloadLists()};confirmDelete=false}}){Text("TA BORT")}},dismissButton={TextButton(onClick={confirmDelete=false}){Text("AVBRYT")}})
+        return
+    }
+
+    Column {
+        TabRow(tab){listOf("MINA","ALLA","SKAPA").forEachIndexed{i,t->Tab(tab==i,{tab=i},text={Text(t)})}}
+        message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(8.dp))}
+        when(tab){
+            0->LazyColumn{items(mine){f->Row(Modifier.fillMaxWidth().clickable{scope.launch{reloadDetail(f)}}.padding(12.dp)){Text("🐾",fontSize=25.sp);Column(Modifier.padding(start=9.dp)){Text(f.name,color=PanelCream,fontWeight=FontWeight.Bold);Text("${roleName(f.myRole)} • ${f.memberCount} • bank %.1f".format(f.bankBalance),color=PanelGold,fontSize=11.sp)}}}}
+            1->LazyColumn{items(publicFlocks){f->Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically){Text("🐾 ${f.name}",Modifier.weight(1f),color=PanelCream);Text("${f.memberCount}",color=PanelGold);TextButton(enabled=mine.none{it.flockId==f.flockId}&&mine.size<3,onClick={scope.launch{runCatching{api.applyToFlock(f.flockId)}.onSuccess{message="Ansökan skickad."}.onFailure{message="Ansökan kunde inte skickas."}}}){Text("GÅ MED")}}}}
+            else->Column(Modifier.padding(top=14.dp),verticalArrangement=Arrangement.spacedBy(9.dp)){Text("Det kostar 500 ben. Du kan vara med i högst tre flockar.",color=PanelCream);OutlinedTextField(name,{name=it.take(24)},Modifier.fillMaxWidth(),label={Text("Unikt flocknamn")});Button(onClick={scope.launch{runCatching{api.createFlock(name)}.onSuccess{message="Flocken skapades!";reloadLists();tab=0}.onFailure{message="Kontrollera namnet, saldot och flockplatserna."}}},modifier=Modifier.fillMaxWidth()){Text("SKAPA FLOCK")}}
+        }
+    }
+}
+
 private fun roleName(role:String)=when(role){"leader"->"Flockledare";"guard"->"Flockvakt";else->"Flockmedlem"}
 
 @Composable private fun AdminPanel(api:GameApiRepository){
