@@ -155,18 +155,6 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
     LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){items(items){item->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A)).clickable(enabled=!busy&&!item.equipped){busy=true;scope.launch{runCatching{api.equip(item.itemId)};onProfile(api.bootstrap());reload();busy=false}}.padding(13.dp),verticalAlignment=Alignment.CenterVertically){Image(markerBitmap(context,item.assetName).asImageBitmap(),null,Modifier.size(46.dp));Text(item.nameSv,Modifier.weight(1f).padding(start=10.dp),color=PanelCream);Text(stringResource(if(item.equipped)R.string.equipment_equipped else R.string.equipment_select),color=if(item.equipped)PanelTeal else PanelGold,fontWeight=FontWeight.Bold)}}}
 }
 
-@Composable private fun LegacyHomePanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit) {
-    val scope=rememberCoroutineScope();var result by remember{mutableStateOf("Automaten kan användas inom 50 meter från hemmet.")};var spinning by remember{mutableStateOf(false)}
-    Column(verticalArrangement=Arrangement.spacedBy(13.dp)) {
-        Text(if(profile.homeLat==null)"Du har inte valt hem ännu." else "Ditt hem är sparat.",color=PanelCream,fontSize=18.sp)
-        Button(onClick={scope.launch{runCatching{api.setHome()}.onSuccess{result="Hemmet är sparat. Du kan flytta det igen om 24 timmar.";onProfile(api.bootstrap())}.onFailure{result="Hemmet kunde inte flyttas: kontrollera GPS och cooldown."}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_068))}
-        HorizontalDivider();Text(stringResource(R.string.ui_text_020),color=PanelGold,fontWeight=FontWeight.Black,fontSize=19.sp)
-        Text(result,color=PanelCream)
-        Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){listOf(1,2,5,10).forEach{stake->Button(enabled=!spinning,onClick={spinning=true;scope.launch{runCatching{api.spinHome(stake)}.onSuccess{result=if(it.payout==0)"Ingen vinst den här gången." else "Vinst! ${it.payout} ben (${it.multiplier}×)";onBalance(it.balance)}.onFailure{result="Automaten kan bara användas hemma med bra GPS."};delay(5000);spinning=false}}){Text("$stake")}}}
-        if(spinning) LinearProgressIndicator(Modifier.fillMaxWidth(),color=PanelGold)
-    }
-}
-
 @Composable private fun HomePanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit){
     val context=LocalContext.current;val scope=rememberCoroutineScope();var message by remember{mutableStateOf(context.getString(R.string.home_slot_intro))};var pending by remember{mutableStateOf<SlotResult?>(null)};var revealed by remember{mutableStateOf(true)};var error by remember{mutableStateOf(false)}
     fun reveal(){pending?.let{r->message=if(r.payout==0)context.getString(R.string.slot_loss) else context.getString(R.string.slot_win,r.payout,r.multiplier.toString());onBalance(r.balance)};revealed=true;pending=null}
@@ -209,13 +197,6 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 }
 @Composable private fun SettingToggle(title:String,help:String,value:Boolean,onChange:(Boolean)->Unit){Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(title,color=PanelCream,fontWeight=FontWeight.Bold);Text(help,color=PanelCream.copy(alpha=.65f),fontSize=12.sp)};Switch(value,onChange)}}
 
-@Composable private fun LegacyFlocksPanel(api:GameApiRepository,onBalance:(Long)->Unit) {
-    val scope=rememberCoroutineScope();var tab by remember{mutableIntStateOf(0)};var mine by remember{mutableStateOf<List<MyFlock>>(emptyList())};var all by remember{mutableStateOf<List<FlockSummary>>(emptyList())};var selected by remember{mutableStateOf<MyFlock?>(null)};var members by remember{mutableStateOf<List<FlockMember>>(emptyList())};var name by remember{mutableStateOf("")};var message by remember{mutableStateOf<String?>(null)}
-    fun reload(){scope.launch{mine=runCatching{api.myFlocks()}.getOrDefault(emptyList());all=runCatching{api.listFlocks()}.getOrDefault(emptyList())}}
-    LaunchedEffect(Unit){reload()}
-    selected?.let{flock->Column{Text(flock.name,color=PanelGold,fontSize=24.sp,fontWeight=FontWeight.Black);Text("Flockbank: %.1f ben • ${flock.memberCount} medlemmar".format(flock.bankBalance),color=PanelCream);Button(onClick={selected=null}){Text(stringResource(R.string.ui_text_075))};LazyColumn{items(members){m->Column(Modifier.fillMaxWidth().padding(9.dp)){Text(m.displayName,color=PanelCream,fontWeight=FontWeight.Bold);Text("${roleName(m.role)} • %.2f km • ${m.boneBalance} ben".format(m.totalMeters/1000.0),color=PanelGold,fontSize=12.sp)}}}}};if(selected!=null)return
-    Column{TabRow(tab){Tab(tab==0,{tab=0},text={Text(stringResource(R.string.ui_text_041))});Tab(tab==1,{tab=1},text={Text(stringResource(R.string.ui_text_005))});Tab(tab==2,{tab=2},text={Text(stringResource(R.string.ui_text_060))})};message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(8.dp))};when(tab){0->LazyColumn{items(mine){f->Row(Modifier.fillMaxWidth().clickable{selected=f;scope.launch{members=api.members(f.flockId)}}.padding(12.dp)){Text(stringResource(R.string.ui_text_089),fontSize=26.sp);Column(Modifier.padding(start=9.dp)){Text(f.name,color=PanelCream,fontWeight=FontWeight.Bold);Text("${roleName(f.myRole)} • ${f.memberCount} • bank %.1f".format(f.bankBalance),color=PanelGold,fontSize=12.sp)}}}};1->LazyColumn{items(all){f->Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically){Text("🐾 ${f.name}",Modifier.weight(1f),color=PanelCream);Text("${f.memberCount}",color=PanelGold);TextButton(enabled=mine.none{it.flockId==f.flockId}&&mine.size<3,onClick={scope.launch{runCatching{api.applyToFlock(f.flockId)}.onSuccess{message="Ansökan skickad"}.onFailure{message="Ansökan kunde inte skickas"}}}){Text(stringResource(R.string.ui_text_028))}}}};else->Column(Modifier.padding(top=15.dp)){Text(stringResource(R.string.ui_text_015),color=PanelCream);OutlinedTextField(name,{name=it.take(24)},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_078))});Button(onClick={scope.launch{runCatching{api.createFlock(name)}.onSuccess{message="Flocken skapades!";reload();tab=0}.onFailure{message="Namnet är upptaget, ogiltigt eller saldot för lågt."}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_061))}}}}
-}
 @Composable private fun FlocksPanel(api:GameApiRepository,onBalance:(Long)->Unit) {
     val scope=rememberCoroutineScope()
     val context=LocalContext.current
@@ -278,7 +259,6 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 }
 
 private fun localizedRoleName(role:String,context:android.content.Context)=context.getString(when(role){"leader"->R.string.flock_role_leader;"guard"->R.string.flock_role_guard;else->R.string.flock_role_member})
-private fun roleName(role:String)=role // Only referenced by the unreachable legacy preview below.
 private fun flockIconGlyph(iconId:String)=when(iconId){"flock_paw_shield"->"🛡️";else->"🐾"}
 private fun shortTimestamp(value:String)=runCatching{java.time.Instant.parse(value).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}.getOrDefault(value.take(16))
 
