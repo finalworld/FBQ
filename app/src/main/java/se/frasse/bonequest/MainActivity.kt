@@ -475,9 +475,20 @@ private fun ActionButtonContent(iconDrawable:Int,label:String,detail:String) {
             Box(Modifier.width(84.dp).fillMaxHeight(),contentAlignment=Alignment.Center) {
                 Image(painterResource(iconDrawable),null,Modifier.size(43.dp),contentScale=ContentScale.Fit)
             }
-            Text(label,Modifier.padding(start=12.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=18.sp)
-            Spacer(Modifier.weight(1f))
-            Text(detail,Modifier.padding(end=18.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=15.sp)
+            Text(
+                label,
+                Modifier.weight(1f).padding(start=12.dp),
+                color=androidx.compose.ui.graphics.Color(0xFFFFD78D),
+                fontWeight=FontWeight.Black,fontSize=17.sp,maxLines=1,
+                softWrap=false
+            )
+            Text(
+                detail,
+                Modifier.weight(1.12f).padding(end=17.dp),
+                color=androidx.compose.ui.graphics.Color(0xFFFFD78D),
+                fontWeight=FontWeight.Black,fontSize=13.sp,maxLines=1,
+                softWrap=false,textAlign=TextAlign.End
+            )
         }
     }
 }
