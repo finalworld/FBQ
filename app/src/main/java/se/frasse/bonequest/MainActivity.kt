@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -672,20 +673,23 @@ private fun ActionButtonContent(iconDrawable:Int,label:String,detail:String) {
             Box(Modifier.width(84.dp).fillMaxHeight(),contentAlignment=Alignment.Center) {
                 Image(painterResource(iconDrawable),null,Modifier.size(43.dp),contentScale=ContentScale.Fit)
             }
-            Text(
-                label,
-                Modifier.weight(1f).padding(start=12.dp),
-                color=androidx.compose.ui.graphics.Color(0xFFFFD78D),
-                fontWeight=FontWeight.Black,fontSize=17.sp,maxLines=1,
-                softWrap=false
-            )
-            Text(
-                detail,
-                Modifier.weight(1.12f).padding(end=17.dp),
-                color=androidx.compose.ui.graphics.Color(0xFFFFD78D),
-                fontWeight=FontWeight.Black,fontSize=13.sp,maxLines=1,
-                softWrap=false,textAlign=TextAlign.End
-            )
+            Column(
+                Modifier.weight(1f).padding(start=12.dp,end=17.dp),
+                verticalArrangement=Arrangement.Center
+            ) {
+                Text(
+                    label,
+                    color=androidx.compose.ui.graphics.Color(0xFFFFD78D),
+                    fontWeight=FontWeight.Black,fontSize=16.sp,maxLines=1,
+                    softWrap=false,overflow=TextOverflow.Ellipsis
+                )
+                Text(
+                    detail,
+                    color=androidx.compose.ui.graphics.Color(0xFFFFE5B0).copy(alpha=.78f),
+                    fontWeight=FontWeight.Bold,fontSize=11.sp,maxLines=1,
+                    softWrap=false,overflow=TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
