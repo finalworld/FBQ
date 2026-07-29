@@ -111,6 +111,10 @@ begin
      or not has_function_privilege('authenticated','public.sync_walkable_spawn_candidates(jsonb)','EXECUTE') then
     raise exception 'Walkable world candidate boundary invalid';
   end if;
+  if has_function_privilege('anon','public.get_flock_member_bone_collection(uuid,uuid)','EXECUTE')
+     or not has_function_privilege('authenticated','public.get_flock_member_bone_collection(uuid,uuid)','EXECUTE') then
+    raise exception 'Flock member collection RPC privileges invalid';
+  end if;
 end $$;
 
 rollback;

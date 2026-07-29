@@ -51,6 +51,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.conflate
 import se.frasse.bonequest.walking.WalkingServiceController
+import se.frasse.bonequest.walking.WalkingPreferences
 import se.frasse.bonequest.audio.DogBarkPlayer
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
@@ -166,6 +167,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
 
     LaunchedEffect(permissionGranted,currentProfile.walkingModeEnabled,permissionRefresh) {
         if(!permissionGranted||!currentProfile.walkingModeEnabled)return@LaunchedEffect
+        WalkingPreferences(context).apply {
+            setEnabled(currentProfile.walkingModeEnabled)
+            setBarkEnabled(currentProfile.barkEnabled)
+            setVibrationEnabled(currentProfile.vibrationEnabled)
+        }
         if(Build.VERSION.SDK_INT>=29&&ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_BACKGROUND_LOCATION)!=PackageManager.PERMISSION_GRANTED){
             backgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         } else if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){

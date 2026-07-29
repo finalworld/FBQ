@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -201,7 +202,7 @@ private fun rarityColor(rarity:String)=when(rarity){"mythic"->Color(0xFFE2AA3D);
         SettingToggle("Djuraffärer","Visa butiker med djur- och hundsaker.",poiSettings.showPetShops){poiSettings=poiSettings.copy(showPetShops=it)}
         SettingToggle("Veterinärer","Visa veterinärer och djursjukhus.",poiSettings.showVets){poiSettings=poiSettings.copy(showVets=it)}
         SettingToggle("Hundservice","Visa trim, hunddagis och liknande.",poiSettings.showGrooming){poiSettings=poiSettings.copy(showGrooming=it)}
-        Button(onClick={scope.launch{runCatching{api.updateSettings(walking,bark,vibration);api.updatePoiSettings(poiSettings)}.onSuccess{WalkingPreferences(context).setEnabled(walking);if(walking)WalkingServiceController.start(context) else WalkingServiceController.stop(context);onPoiSettings(poiSettings);onProfile(api.bootstrap());saved="Inställningarna är sparade."}.onFailure{saved="Kunde inte spara inställningarna."}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_062))}
+        Button(onClick={scope.launch{runCatching{api.updateSettings(walking,bark,vibration);api.updatePoiSettings(poiSettings)}.onSuccess{WalkingPreferences(context).apply{setEnabled(walking);setBarkEnabled(bark);setVibrationEnabled(vibration)};if(walking)WalkingServiceController.start(context) else WalkingServiceController.stop(context);onPoiSettings(poiSettings);onProfile(api.bootstrap());saved="Inställningarna är sparade."}.onFailure{saved="Kunde inte spara inställningarna."}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_062))}
         saved?.let{Text(it,color=PanelGold)};Spacer(Modifier.weight(1f));OutlinedButton(onClick={scope.launch{api.signOut()}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_036))};TextButton(onClick={deleting=true},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_058),color=Color(0xFFFF6B5D))}
     }
     if(deleting) AlertDialog(onDismissRequest={deleting=false},title={Text(stringResource(R.string.ui_text_059))},text={Column{Text(stringResource(R.string.ui_text_022));OutlinedTextField(confirmation,{confirmation=it},Modifier.fillMaxWidth())}},confirmButton={Button(enabled=confirmation==profile.displayName,onClick={scope.launch{runCatching{api.deleteAccount(confirmation)}.onSuccess{api.signOut()}.onFailure{saved="Kontot kunde inte raderas. Kontrollera flockledarskap och namnet."};deleting=false}}){Text(stringResource(R.string.ui_text_057))}},dismissButton={TextButton(onClick={deleting=false}){Text(stringResource(R.string.ui_text_006))}})
@@ -217,6 +218,7 @@ private fun rarityColor(rarity:String)=when(rarity){"mythic"->Color(0xFFE2AA3D);
 }
 @Composable private fun FlocksPanel(api:GameApiRepository,onBalance:(Long)->Unit) {
     val scope=rememberCoroutineScope()
+    val context=LocalContext.current
     var mine by remember{mutableStateOf<List<MyFlock>>(emptyList())}
     var publicFlocks by remember{mutableStateOf<List<FlockSummary>>(emptyList())}
     var selected by remember{mutableStateOf<MyFlock?>(null)}
@@ -228,6 +230,8 @@ private fun rarityColor(rarity:String)=when(rarity){"mythic"->Color(0xFFE2AA3D);
     var name by remember{mutableStateOf("")}
     var message by remember{mutableStateOf<String?>(null)}
     var confirmDelete by remember{mutableStateOf(false)}
+    var statsMember by remember{mutableStateOf<FlockMember?>(null)}
+    var statsRows by remember{mutableStateOf<List<BoneCollectionRow>>(emptyList())}
 
     suspend fun reloadLists(){mine=api.myFlocks();publicFlocks=api.listFlocks()}
     suspend fun reloadDetail(f:MyFlock){
@@ -244,6 +248,12 @@ private fun rarityColor(rarity:String)=when(rarity){"mythic"->Color(0xFFE2AA3D);
             Row(verticalAlignment=Alignment.CenterVertically){TextButton(onClick={selected=null}){Text(stringResource(R.string.ui_text_086))};Column{Text(flock.name,color=PanelGold,fontSize=23.sp,fontWeight=FontWeight.Black);Text("${roleName(flock.myRole)} • ${flock.memberCount} medlemmar • bank %.1f".format(flock.bankBalance),color=PanelCream,fontSize=12.sp)}}
             TabRow(detailTab){listOf("MEDLEMMAR","ANSÖKNINGAR","BANK","HANTERA").forEachIndexed{i,t->Tab(detailTab==i,{detailTab=i},text={Text(t,fontSize=9.sp)})}}
             message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(8.dp))}
+            if(detailTab==0&&members.isNotEmpty()){
+                Text(stringResource(R.string.flock_member_stats_help),color=PanelCream.copy(alpha=.75f),fontSize=11.sp)
+                LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){items(members){member->
+                    AssistChip(onClick={scope.launch{runCatching{api.flockMemberCollection(flock.flockId,member.playerId)}.onSuccess{statsRows=it;statsMember=member}.onFailure{message=context.getString(R.string.flock_member_stats_failed)}}},label={Text(member.displayName)})
+                }}
+            }
             when(detailTab){
                 0->LazyColumn{items(members){m->Column(Modifier.fillMaxWidth().background(Color(0xFF20282A)).padding(10.dp)){Text(m.displayName,color=PanelCream,fontWeight=FontWeight.Bold);Text("${roleName(m.role)} • %.2f km • ${m.boneBalance} ben • ${m.totalBones} hittade • ${m.totalPiles} högar".format(m.totalMeters/1000.0),color=PanelGold,fontSize=11.sp);if(flock.myRole=="leader"&&m.role!="leader")Row{TextButton(onClick={scope.launch{runCatching{api.setGuard(flock.flockId,m.playerId,m.role!="guard")}.onSuccess{reloadDetail(flock)}}}){Text(if(m.role=="guard")"GÖR MEDLEM" else "GÖR VAKT")};TextButton(onClick={scope.launch{runCatching{api.transfer(flock.flockId,m.playerId)}.onSuccess{reloadLists();selected=null}}}){Text(stringResource(R.string.ui_text_029))}};if((flock.myRole=="leader"&&m.role!="leader")||(flock.myRole=="guard"&&m.role=="member"))TextButton(onClick={scope.launch{runCatching{api.kick(flock.flockId,m.playerId)}.onSuccess{reloadDetail(flock)}}}){Text(stringResource(R.string.ui_text_063),color=Color(0xFFFF6B5D))}}}}
                 1->if(flock.myRole !in listOf("leader","guard"))Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(stringResource(R.string.ui_text_018),color=PanelCream)}else LazyColumn{items(applications){a->Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically){Text(a.displayName,Modifier.weight(1f),color=PanelCream);TextButton(onClick={scope.launch{runCatching{api.decideApplication(flock.flockId,a.playerId,true)}.onSuccess{reloadDetail(flock)}}}){Text(stringResource(R.string.ui_text_026))};TextButton(onClick={scope.launch{runCatching{api.decideApplication(flock.flockId,a.playerId,false)}.onSuccess{reloadDetail(flock)}}}){Text(stringResource(R.string.ui_text_043))}}}}
@@ -252,6 +262,7 @@ private fun rarityColor(rarity:String)=when(rarity){"mythic"->Color(0xFFE2AA3D);
             }
         }
         if(confirmDelete)AlertDialog(onDismissRequest={confirmDelete=false},title={Text("Ta bort ${flock.name}?")},text={Text(stringResource(R.string.ui_text_017))},confirmButton={Button(onClick={scope.launch{runCatching{api.deleteFlock(flock.flockId,flock.name)}.onSuccess{selected=null;reloadLists()};confirmDelete=false}}){Text(stringResource(R.string.ui_text_070))}},dismissButton={TextButton(onClick={confirmDelete=false}){Text(stringResource(R.string.ui_text_006))}})
+        statsMember?.let{member->AlertDialog(onDismissRequest={statsMember=null},title={Text(member.displayName)},text={LazyColumn(Modifier.heightIn(max=430.dp)){items((0..11).toList()){type->val count=statsRows.firstOrNull{it.boneType==type}?.lifetimeCount?:0;Row(Modifier.fillMaxWidth().padding(vertical=5.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(boneDrawable(type)),null,Modifier.size(36.dp),colorFilter=if(count>0)null else ColorFilter.tint(Color(0xFF5D6263)));Text(if(count>0)BONE_NAMES[type] else stringResource(R.string.collection_unknown_bone),Modifier.weight(1f).padding(start=8.dp),color=PanelCream);Text(count.toString(),color=PanelGold,fontWeight=FontWeight.Bold)}}}},confirmButton={TextButton(onClick={statsMember=null}){Text(stringResource(R.string.ui_text_064))}})}
         return
     }
 
@@ -275,7 +286,7 @@ private fun roleName(role:String)=when(role){"leader"->"Flockledare";"guard"->"F
     var lat by remember{mutableStateOf("")};var lon by remember{mutableStateOf("")};var variant by remember{mutableStateOf("0")};var type by remember{mutableStateOf("bone")}
     var objectId by remember{mutableStateOf("")};var poiName by remember{mutableStateOf("")};var poiType by remember{mutableStateOf("dog_park")};var poiShop by remember{mutableStateOf(false)}
     var addressSearch by remember{mutableStateOf("")}
-    var confirmObjectUpdate by remember{mutableStateOf(false)}
+    var confirmObjectPlacement by remember{mutableStateOf(false)}
     var message by remember{mutableStateOf<String?>(null)};var audits by remember{mutableStateOf<List<AdminAudit>>(emptyList())}
     fun find(){scope.launch{players=runCatching{api.adminPlayers(search)}.getOrDefault(emptyList())}}
     Column{
@@ -286,7 +297,7 @@ private fun roleName(role:String)=when(role){"leader"->"Flockledare";"guard"->"F
         if(tab==1&&objectId.isNotBlank()){
             OutlinedButton(
                 enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&variant.toIntOrNull()!=null&&reason.length>=3,
-                onClick={confirmObjectUpdate=true},modifier=Modifier.fillMaxWidth()
+                onClick={confirmObjectPlacement=true},modifier=Modifier.fillMaxWidth()
             ){Text(stringResource(R.string.admin_preview_update))}
         }
         when(tab){
@@ -306,20 +317,20 @@ private fun roleName(role:String)=when(role){"leader"->"Flockledare";"guard"->"F
                     TextButton(onClick={selected=null}){Text(stringResource(R.string.ui_text_076))}
                 }}
             }
-            1->Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Text(stringResource(R.string.ui_text_056),color=PanelCream);Row{listOf("bone","pile").forEach{x->FilterChip(type==x,{type=x},label={Text(if(x=="bone")"BEN" else "HÖG")},modifier=Modifier.padding(end=5.dp))}};Row{OutlinedTextField(addressSearch,{addressSearch=it},Modifier.weight(1f),label={Text(stringResource(R.string.ui_text_008))});Button(enabled=addressSearch.isNotBlank(),onClick={scope.launch{val found=withContext(Dispatchers.IO){runCatching{android.location.Geocoder(context).getFromLocationName(addressSearch,1)?.firstOrNull()}.getOrNull()};if(found==null)message="Platsen hittades inte" else{lat="%.6f".format(java.util.Locale.US,found.latitude);lon="%.6f".format(java.util.Locale.US,found.longitude);message="Platsen hittades"}}}){Text(stringResource(R.string.ui_text_069))}};OutlinedTextField(objectId,{objectId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_050))});OutlinedTextField(lat,{lat=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_037))});OutlinedTextField(lon,{lon=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_038))});OutlinedTextField(variant,{variant=it},Modifier.fillMaxWidth(),label={Text(if(type=="bone")"Bentyp 0–11" else "Högtyp 0–4")});OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_051))});Button(enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={scope.launch{runCatching{api.adminPlaceObject(type,lat.toDouble(),lon.toDouble(),variant.toInt(),reason)}.onSuccess{message="Objektet placerades"}.onFailure{message="Placeringen misslyckades"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_053))};OutlinedButton(enabled=objectId.isNotBlank()&&reason.length>=3,onClick={scope.launch{runCatching{api.adminDeleteWorldObject(objectId,type,reason)}.onSuccess{message="Objektet togs bort"}.onFailure{message="Kunde inte ta bort objektet"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_071))}}
+            1->Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Text(stringResource(R.string.ui_text_056),color=PanelCream);Row{listOf("bone","pile").forEach{x->FilterChip(type==x,{type=x},label={Text(if(x=="bone")"BEN" else "HÖG")},modifier=Modifier.padding(end=5.dp))}};Row{OutlinedTextField(addressSearch,{addressSearch=it},Modifier.weight(1f),label={Text(stringResource(R.string.ui_text_008))});Button(enabled=addressSearch.isNotBlank(),onClick={scope.launch{val found=withContext(Dispatchers.IO){runCatching{android.location.Geocoder(context).getFromLocationName(addressSearch,1)?.firstOrNull()}.getOrNull()};if(found==null)message="Platsen hittades inte" else{lat="%.6f".format(java.util.Locale.US,found.latitude);lon="%.6f".format(java.util.Locale.US,found.longitude);message="Platsen hittades"}}}){Text(stringResource(R.string.ui_text_069))}};OutlinedTextField(objectId,{objectId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_050))});OutlinedTextField(lat,{lat=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_037))});OutlinedTextField(lon,{lon=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_038))});OutlinedTextField(variant,{variant=it},Modifier.fillMaxWidth(),label={Text(if(type=="bone")"Bentyp 0–11" else "Högtyp 0–4")});OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_051))});Button(enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={confirmObjectPlacement=true},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_053))};OutlinedButton(enabled=objectId.isNotBlank()&&reason.length>=3,onClick={scope.launch{runCatching{api.adminDeleteWorldObject(objectId,type,reason)}.onSuccess{message="Objektet togs bort"}.onFailure{message="Kunde inte ta bort objektet"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_071))}}
             2->LazyColumn(verticalArrangement=Arrangement.spacedBy(7.dp)){item{Text(stringResource(R.string.ui_text_067),color=PanelCream);OutlinedTextField(objectId,{objectId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_054))});OutlinedTextField(poiName,{poiName=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_044))});Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())){listOf("dog_park","pet_shop","veterinary","grooming","dog_wash").forEach{x->FilterChip(poiType==x,{poiType=x},label={Text(x)},modifier=Modifier.padding(end=4.dp))}};OutlinedTextField(lat,{lat=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_037))});OutlinedTextField(lon,{lon=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_038))});SettingToggle("Spelbutik","Besök butik blir tillgänglig inom 50 meter.",poiShop){poiShop=it};OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_051))});Button(enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&reason.length>=3,onClick={scope.launch{runCatching{api.adminUpsertPoi(objectId.ifBlank{null},poiType,poiName,lat.toDouble(),lon.toDouble(),poiShop,reason)}.onSuccess{message="Kartplatsen sparades"}.onFailure{message="Kartplatsen kunde inte sparas"}}},modifier=Modifier.fillMaxWidth()){Text(if(objectId.isBlank())"SKAPA PLATS" else "UPPDATERA PLATS")};OutlinedButton(enabled=objectId.isNotBlank()&&reason.length>=3,onClick={scope.launch{runCatching{api.adminDeletePoi(objectId,reason)}.onSuccess{message="Kartplatsen togs bort"}.onFailure{message="Kartplatsen kunde inte tas bort"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_072))}}}
             else->LazyColumn{items(audits){a->Column(Modifier.fillMaxWidth().padding(8.dp)){Text(a.action,color=PanelGold,fontWeight=FontWeight.Bold);Text(a.reason,color=PanelCream);Text(a.createdAt,color=PanelCream.copy(alpha=.6f),fontSize=11.sp)}}}
         }
     }
-    if(confirmObjectUpdate)AlertDialog(
-        onDismissRequest={confirmObjectUpdate=false},
+    if(confirmObjectPlacement)AlertDialog(
+        onDismissRequest={confirmObjectPlacement=false},
         title={Text(stringResource(R.string.admin_update_title))},
         text={Text(stringResource(R.string.admin_placement_warning))},
-        confirmButton={Button(onClick={confirmObjectUpdate=false;scope.launch{
-            runCatching{api.adminPlaceObject(type,lat.toDouble(),lon.toDouble(),variant.toInt(),reason,objectId)}
-                .onSuccess{message=context.getString(R.string.admin_object_updated)}
-                .onFailure{message=context.getString(R.string.admin_object_update_failed)}
+        confirmButton={Button(onClick={confirmObjectPlacement=false;scope.launch{
+            runCatching{api.adminPlaceObject(type,lat.toDouble(),lon.toDouble(),variant.toInt(),reason,objectId.ifBlank{null})}
+                .onSuccess{message=context.getString(if(objectId.isBlank())R.string.admin_object_created else R.string.admin_object_updated)}
+                .onFailure{message=context.getString(if(objectId.isBlank())R.string.admin_object_create_failed else R.string.admin_object_update_failed)}
         }}){Text(stringResource(R.string.admin_place_anyway))}},
-        dismissButton={TextButton(onClick={confirmObjectUpdate=false}){Text(stringResource(R.string.ui_text_006))}}
+        dismissButton={TextButton(onClick={confirmObjectPlacement=false}){Text(stringResource(R.string.ui_text_006))}}
     )
 }

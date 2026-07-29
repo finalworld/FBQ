@@ -33,6 +33,7 @@ class WalkingLocationService : Service() {
     private var sessionMeters=0.0
     private var nearbyBones=0
     private var insideBoneZone=false
+    private var tracking=false
 
     private val callback=object:LocationCallback() {
         override fun onLocationResult(result:LocationResult) {
@@ -51,7 +52,7 @@ class WalkingLocationService : Service() {
                 serviceScope.launch {
                     SupabaseProvider.clientOrNull?.let { client ->
                         runCatching { DistanceSyncRepository(client).updatePresence(sample,location.bearing,true) }
-                        runCatching { WorldRepository(client).loadNearby(GeoPoint(sample.latitude,sample.longitude),40.0) }
+                        runCatching { WorldRepository(client).loadNearby(GeoPoint(sample.latitude,sample.longitude),25.0) }
                             .onSuccess { world ->
                                 nearbyBones=world.bones.size
                                 if(nearbyBones>0&&!insideBoneZone){insideBoneZone=true;alertForBone()}
@@ -72,18 +73,20 @@ class WalkingLocationService : Service() {
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
         if (intent?.action==ACTION_STOP) { stopWalking(); return START_NOT_STICKY }
         startForeground(NOTIFICATION_ID,buildNotification())
+        if(tracking)return START_STICKY
         if (ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) {
             stopWalking(); return START_NOT_STICKY
         }
         val request=LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY,10_000)
             .setMinUpdateIntervalMillis(5_000).setMaxUpdateDelayMillis(15_000).build()
         fused.requestLocationUpdates(request,callback,mainLooper)
+        tracking=true
         serviceScope.launch { syncQueuedBatches() }
         return START_STICKY
     }
 
     override fun onDestroy() {
-        fused.removeLocationUpdates(callback); flushBatch(); serviceScope.cancel(); super.onDestroy()
+        fused.removeLocationUpdates(callback);tracking=false; flushBatch(); serviceScope.cancel(); super.onDestroy()
     }
     override fun onBind(intent:Intent?):IBinder?=null
 
@@ -106,7 +109,7 @@ class WalkingLocationService : Service() {
     }
 
     private fun stopWalking() {
-        flushBatch(); fused.removeLocationUpdates(callback); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
+        flushBatch(); fused.removeLocationUpdates(callback);tracking=false; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
     }
 
     private fun createChannel() {
