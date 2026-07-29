@@ -13,6 +13,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -44,6 +45,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.conflate
+import se.frasse.bonequest.walking.WalkingServiceController
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -119,14 +121,32 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var gpsHasBeenReady by remember { mutableStateOf(false) }
     var gpsWasInError by remember { mutableStateOf(false) }
     var poiDiscoveryDone by remember { mutableStateOf(false) }
+    var permissionRefresh by remember { mutableIntStateOf(0) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionGranted = it
         if (!it) status = "GPS-behörighet behövs för att spela"
+    }
+    val backgroundPermissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted->
+        if(granted)permissionRefresh++
+        if(!granted)status="Tillåt plats hela tiden i Androids inställningar för Promenadläge."
+    }
+    val notificationPermissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted->
+        if(granted)permissionRefresh++
+        if(!granted)status="Tillåt notifieringar för varningar när skärmen är släckt."
     }
 
     LaunchedEffect(Unit) {
         if (!permissionGranted) permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         gameApi?.let{runCatching{it.poiSettings()}.onSuccess{settings->poiSettings=settings}}
+    }
+
+    LaunchedEffect(permissionGranted,currentProfile.walkingModeEnabled,permissionRefresh) {
+        if(!permissionGranted||!currentProfile.walkingModeEnabled)return@LaunchedEffect
+        if(Build.VERSION.SDK_INT>=29&&ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_BACKGROUND_LOCATION)!=PackageManager.PERMISSION_GRANTED){
+            backgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        } else if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else WalkingServiceController.start(context)
     }
 
     LaunchedEffect(status, loadingBones) {
