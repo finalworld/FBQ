@@ -148,11 +148,11 @@ private fun panelTitleResource(p:GamePanel)=when(p){
 private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone_02,R.drawable.bone_03,R.drawable.bone_04,R.drawable.bone_05,R.drawable.bone_06,R.drawable.bone_07,R.drawable.bone_08,R.drawable.bone_09,R.drawable.bone_10,R.drawable.bone_11,R.drawable.bone_12)[type.coerceIn(0,11)]
 
 @Composable private fun EquipmentPanel(api:GameApiRepository,onProfile:(SessionBootstrap)->Unit) {
-    val scope=rememberCoroutineScope();var items by remember{mutableStateOf<List<ShopItem>>(emptyList())};var busy by remember{mutableStateOf(false)}
+    val scope=rememberCoroutineScope();var items by remember{mutableStateOf<List<ShopItem>>(emptyList())};var busy by remember{mutableStateOf(false)};var message by remember{mutableStateOf<String?>(null)}
     fun reload(){scope.launch{items=runCatching{api.catalog()}.getOrDefault(emptyList()).filter{it.owned}}}
     LaunchedEffect(Unit){reload()}
     val context=LocalContext.current
-    LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){items(items){item->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A)).clickable(enabled=!busy&&!item.equipped){busy=true;scope.launch{runCatching{api.equip(item.itemId)};onProfile(api.bootstrap());reload();busy=false}}.padding(13.dp),verticalAlignment=Alignment.CenterVertically){Image(markerBitmap(context,item.assetName).asImageBitmap(),null,Modifier.size(46.dp));Text(item.nameSv,Modifier.weight(1f).padding(start=10.dp),color=PanelCream);Text(stringResource(if(item.equipped)R.string.equipment_equipped else R.string.equipment_select),color=if(item.equipped)PanelTeal else PanelGold,fontWeight=FontWeight.Bold)}}}
+    Column{message?.let{Text(it,color=Color(0xFFFF6B5D),modifier=Modifier.padding(bottom=6.dp))};LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){items(items){item->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A)).clickable(enabled=!busy&&!item.equipped){busy=true;message=null;scope.launch{runCatching{api.equip(item.itemId);api.bootstrap()}.onSuccess{onProfile(it);reload()}.onFailure{message=it.message};busy=false}}.padding(13.dp),verticalAlignment=Alignment.CenterVertically){Image(markerBitmap(context,item.assetName).asImageBitmap(),null,Modifier.size(46.dp));Text(item.nameSv,Modifier.weight(1f).padding(start=10.dp),color=PanelCream);Text(stringResource(if(item.equipped)R.string.equipment_equipped else R.string.equipment_select),color=if(item.equipped)PanelTeal else PanelGold,fontWeight=FontWeight.Bold)}}}}
 }
 
 @Composable private fun HomePanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit){
@@ -272,7 +272,7 @@ private fun shortTimestamp(value:String)=runCatching{java.time.Instant.parse(val
     var adminFlockId by remember{mutableStateOf("")};var adminFlockName by remember{mutableStateOf("")}
     var confirmObjectPlacement by remember{mutableStateOf(false)}
     var message by remember{mutableStateOf<String?>(null)};var audits by remember{mutableStateOf<List<AdminAudit>>(emptyList())}
-    fun find(){scope.launch{players=runCatching{api.adminPlayers(search)}.getOrDefault(emptyList())}}
+    fun find(){scope.launch{runCatching{api.adminPlayers(search)}.onSuccess{players=it;selected=null;message=if(it.isEmpty())"Inga spelare hittades" else null}.onFailure{message="Spelarsökning misslyckades: ${it.message.orEmpty()}"}}}
     Column{
         Text(stringResource(R.string.ui_text_004),color=Color(0xFFFF6B5D),fontWeight=FontWeight.Black)
         Button(onClick=onMapMode,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_083))}

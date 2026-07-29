@@ -4,7 +4,9 @@ import androidx.compose.ui.res.stringResource
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -27,6 +29,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -75,6 +78,11 @@ import java.text.NumberFormat
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: Context) {
+        val fixed = Configuration(newBase.resources.configuration).apply { fontScale = 1f }
+        super.attachBaseContext(newBase.createConfigurationContext(fixed))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
@@ -147,6 +155,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
     }
     BackHandler(enabled = activePanel == null && menuOpen) {
         menuOpen = false
+    }
+    BackHandler(enabled = activePanel == null && !menuOpen && adminMapMode) {
+        adminMapMode = false
+        adminPlacement = null
     }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionGranted = it
@@ -413,6 +425,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
 
             TopHud(
                 count = boneCount,
+                totalMeters = currentProfile.totalMeters,
                 onMenu = { menuOpen = true },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
@@ -421,8 +434,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 Text(stringResource(R.string.ui_text_049),Modifier.padding(horizontal=12.dp,vertical=7.dp),color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black,fontSize=12.sp)
             }
 
-            if(adminMapMode) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=104.dp).zIndex(5f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)) {
-                Row(Modifier.padding(horizontal=12.dp,vertical=7.dp),verticalAlignment=Alignment.CenterVertically){Text(stringResource(R.string.ui_text_003),color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black);TextButton(onClick={adminMapMode=false}){Text(stringResource(R.string.ui_text_007),color=androidx.compose.ui.graphics.Color.White)}}
+            if(adminMapMode) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=82.dp).zIndex(5f).fillMaxWidth(),color=androidx.compose.ui.graphics.Color(0xE5A52222)) {
+                Row(Modifier.fillMaxWidth().height(36.dp).padding(start=10.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically){Text("ADMINLÄGE · TRYCK PÅ KARTAN",Modifier.weight(1f),color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black,fontSize=11.sp,maxLines=1);TextButton(onClick={adminMapMode=false;adminPlacement=null},contentPadding=PaddingValues(horizontal=8.dp,vertical=0.dp)){Text("AVSLUTA",color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black,fontSize=11.sp)}}
             }
 
             if (!followPlayer) {
@@ -600,8 +613,20 @@ internal fun GameScreen(profile:SessionBootstrap) {
             AlertDialog(onDismissRequest={homeInfoOpen=false},title={Text(stringResource(R.string.ui_text_042))},text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text(stringResource(R.string.home_distance,homeDistance?.let{"$it m"}?:stringResource(R.string.home_distance_unknown)));Text(stringResource(if(atHome)R.string.home_available_here else R.string.home_locked_distance));nextMove?.let{Text(stringResource(R.string.home_next_move,it))}}},confirmButton={if(atHome)Button(onClick={homeInfoOpen=false;activePanel=GamePanel.HOME}){Text(stringResource(R.string.ui_text_010))}else TextButton(onClick={homeInfoOpen=false}){Text(stringResource(R.string.ui_text_064))}})
         }
         adminPlacement?.let { point ->
-            var objectType by remember(point){mutableStateOf("bone")};var variant by remember(point){mutableStateOf("0")};var reason by remember(point){mutableStateOf(context.getString(R.string.admin_manual_map_reason))};var busy by remember(point){mutableStateOf(false)};var confirmed by remember(point){mutableStateOf(false)}
-            AlertDialog(onDismissRequest={if(!busy)adminPlacement=null},title={Text(stringResource(R.string.ui_text_055))},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("${"%.6f".format(point.latitude)}, ${"%.6f".format(point.longitude)}");Row{FilterChip(objectType=="bone",{objectType="bone";confirmed=false},label={Text(stringResource(R.string.ui_text_009))});Spacer(Modifier.width(8.dp));FilterChip(objectType=="pile",{objectType="pile";confirmed=false},label={Text(stringResource(R.string.ui_text_033))})};OutlinedTextField(variant,{variant=it.filter(Char::isDigit).take(2);confirmed=false},label={Text(stringResource(if(objectType=="bone")R.string.admin_bone_type_range else R.string.admin_pile_type_range))});OutlinedTextField(reason,{reason=it;confirmed=false},label={Text(stringResource(R.string.ui_text_052))});if(confirmed)Text(stringResource(R.string.admin_placement_warning),color=androidx.compose.ui.graphics.Color(0xFFFFC85B))}},confirmButton={Button(enabled=!busy&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={if(!confirmed){confirmed=true}else{busy=true;scope.launch{runCatching{gameApi?.adminPlaceObject(objectType,point.latitude,point.longitude,variant.toInt(),reason)}.onSuccess{status=context.getString(R.string.admin_object_placed_status);adminPlacement=null}.onFailure{status=context.getString(R.string.admin_place_failed_status,it.message.orEmpty());busy=false}}}}){Text(stringResource(if(confirmed)R.string.admin_place_anyway else R.string.admin_preview_update))}},dismissButton={TextButton(onClick={adminPlacement=null}){Text(stringResource(R.string.ui_text_006))}})
+            var objectType by remember(point){mutableStateOf("bone")};var variant by remember(point){mutableStateOf("0")};var reason by remember(point){mutableStateOf(context.getString(R.string.admin_manual_map_reason))};var shopName by remember(point){mutableStateOf("Frasses butik")};var busy by remember(point){mutableStateOf(false)};var confirmed by remember(point){mutableStateOf(false)}
+            AlertDialog(onDismissRequest={if(!busy)adminPlacement=null},title={Text(stringResource(R.string.ui_text_055))},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+                Text("${"%.6f".format(point.latitude)}, ${"%.6f".format(point.longitude)}")
+                Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())){
+                    listOf("bone","pile","shop").forEach{kind->FilterChip(objectType==kind,{objectType=kind;confirmed=false},label={Text(when(kind){"bone"->stringResource(R.string.ui_text_009);"pile"->stringResource(R.string.ui_text_033);else->"BUTIK"})},modifier=Modifier.padding(end=6.dp))}
+                }
+                if(objectType=="shop")OutlinedTextField(shopName,{shopName=it.take(40);confirmed=false},label={Text("Butiksnamn")})
+                else OutlinedTextField(variant,{variant=it.filter(Char::isDigit).take(2);confirmed=false},label={Text(stringResource(if(objectType=="bone")R.string.admin_bone_type_range else R.string.admin_pile_type_range))})
+                OutlinedTextField(reason,{reason=it;confirmed=false},label={Text(stringResource(R.string.ui_text_052))})
+                if(confirmed)Text(stringResource(R.string.admin_placement_warning),color=androidx.compose.ui.graphics.Color(0xFFFFC85B))
+            }},confirmButton={Button(enabled=!busy&&reason.length>=3&&(objectType=="shop"&&shopName.isNotBlank()||variant.toIntOrNull()!=null),onClick={if(!confirmed){confirmed=true}else{busy=true;scope.launch{
+                val request=if(objectType=="shop")runCatching{gameApi?.adminUpsertPoi(null,"pet_shop",shopName,point.latitude,point.longitude,true,reason)} else runCatching{gameApi?.adminPlaceObject(objectType,point.latitude,point.longitude,variant.toInt(),reason)}
+                request.onSuccess{status=context.getString(R.string.admin_object_placed_status);adminPlacement=null}.onFailure{status=context.getString(R.string.admin_place_failed_status,it.message.orEmpty());busy=false}
+            }}}){Text(stringResource(if(confirmed)R.string.admin_place_anyway else R.string.admin_preview_update))}},dismissButton={TextButton(onClick={adminPlacement=null}){Text(stringResource(R.string.ui_text_006))}})
         }
     }
 }
@@ -613,7 +638,7 @@ private fun ConnectivityManager.isCurrentlyOnline():Boolean {
 }
 
 @Composable
-private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier) {
+private fun TopHud(count:Int,totalMeters:Long,onMenu:()->Unit,modifier:Modifier=Modifier) {
     Box(modifier.fillMaxWidth()) {
         Image(
             painter = painterResource(R.drawable.hud_panel_pixel_v2),
@@ -621,10 +646,10 @@ private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.FillBounds
         )
-        Box(Modifier.statusBarsPadding().fillMaxWidth().height(62.dp)) {
+        Box(Modifier.statusBarsPadding().fillMaxWidth().height(82.dp)) {
         Row(Modifier.fillMaxSize(),verticalAlignment=Alignment.CenterVertically) {
             Box(
-                Modifier.width(64.dp).fillMaxHeight().clickable(onClick=onMenu),
+                Modifier.width(56.dp).fillMaxHeight().clickable(onClick=onMenu),
                 contentAlignment=Alignment.Center
             ) {
                 Column(
@@ -640,27 +665,28 @@ private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier
                 }
             }
             Box(Modifier.width(2.dp).fillMaxHeight(.72f).background(androidx.compose.ui.graphics.Color(0xFFC79439)))
+            Image(painterResource(R.drawable.marker_frasse_mythic),null,Modifier.size(54.dp).padding(5.dp),contentScale=ContentScale.Fit)
             Image(
                 painter=painterResource(R.drawable.hud_logo),
                 contentDescription="Frasse’s Bone Quest",
-                modifier=Modifier.weight(1f).fillMaxHeight().padding(horizontal=10.dp,vertical=8.dp),
+                modifier=Modifier.weight(1f).fillMaxHeight().padding(horizontal=2.dp,vertical=15.dp),
                 contentScale=ContentScale.Fit
             )
-            Text(
-                NumberFormat.getIntegerInstance(Locale.forLanguageTag("sv-SE")).format(count),
-                modifier=Modifier.widthIn(min=72.dp,max=132.dp).padding(end=5.dp),
-                color=androidx.compose.ui.graphics.Color(0xFFFFE8BE),fontWeight=FontWeight.Black,
-                fontSize=when { count<1_000_000->21.sp; count<100_000_000->17.sp; else->14.sp },
-                maxLines=1,textAlign=TextAlign.End
-            )
-            Image(
-                painter=painterResource(R.drawable.bone_01),contentDescription=null,
-                modifier=Modifier.padding(end=8.dp).size(35.dp),contentScale=ContentScale.Fit
-            )
+            Column(Modifier.widthIn(min=108.dp,max=145.dp).fillMaxHeight().padding(end=8.dp,top=7.dp,bottom=7.dp),verticalArrangement=Arrangement.SpaceEvenly){
+                HudStat(R.drawable.bone_01,NumberFormat.getIntegerInstance(Locale.forLanguageTag("sv-SE")).format(count))
+                HudStat(R.drawable.marker_default_paw,String.format(Locale.forLanguageTag("sv-SE"),"%.1f KM",totalMeters/1000.0))
+            }
         }
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp)
             .background(androidx.compose.ui.graphics.Color(0xFFFFC85B)))
         }
+    }
+}
+
+@Composable private fun HudStat(icon:Int,value:String){
+    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+        Image(painterResource(icon),null,Modifier.size(24.dp),contentScale=ContentScale.Fit)
+        Text(value,Modifier.weight(1f),color=androidx.compose.ui.graphics.Color(0xFFFFE8BE),fontWeight=FontWeight.Black,fontSize=12.sp,maxLines=1,textAlign=TextAlign.End,softWrap=false)
     }
 }
 
@@ -1001,7 +1027,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
                         PropertyFactory.iconImage(POI_IMAGE_IDS[index]),
                         PropertyFactory.iconAllowOverlap(false),
                         PropertyFactory.iconIgnorePlacement(false),
-                        PropertyFactory.iconSize(0.11f)
+                        PropertyFactory.iconSize(0.22f)
                     ),
                 BONE_LAYER_IDS.first()
             )
@@ -1010,7 +1036,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
     if(style.getLayer(POI_SHOP_LAYER_ID)==null)style.addLayer(
         SymbolLayer(POI_SHOP_LAYER_ID,POI_SOURCE_ID)
             .withFilter(Expression.eq(Expression.get("hasGameShop"),Expression.literal(true)))
-            .withProperties(PropertyFactory.iconImage(POI_SHOP_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconOffset(arrayOf(24f,-24f)),PropertyFactory.iconSize(.72f))
+            .withProperties(PropertyFactory.iconImage(POI_SHOP_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconOffset(arrayOf(28f,-20f)),PropertyFactory.iconSize(.9f))
     )
 }
 
