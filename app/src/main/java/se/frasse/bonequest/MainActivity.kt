@@ -221,6 +221,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 runCatching { server.loadNearby(center) }.onSuccess {
                     bones=it.bones; piles=it.piles
                 }
+                gameApi?.let { api -> runCatching { api.boneBalance() }.onSuccess { balance ->
+                    boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    currentProfile=currentProfile.copy(boneCount=balance)
+                } }
             }
         }
         val refreshJob = launch {
@@ -234,6 +238,12 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     bones=it.bones; piles=it.piles
                 }
                 runCatching { server.nearbyPlayers() }.onSuccess { nearbyPlayers=it }
+                gameApi?.let { api -> runCatching { api.boneBalance() }.onSuccess { balance ->
+                    if(balance!=currentProfile.boneCount){
+                        boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                        currentProfile=currentProfile.copy(boneCount=balance)
+                    }
+                } }
             }
         }
         runCatching { server.subscribe() }

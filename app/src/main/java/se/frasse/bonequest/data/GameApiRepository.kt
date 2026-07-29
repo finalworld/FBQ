@@ -71,6 +71,7 @@ import java.util.UUID
 
 class GameApiRepository(private val client:SupabaseClient) {
     suspend fun bootstrap():SessionBootstrap = client.postgrest.rpc("get_session_bootstrap").decodeSingle()
+    suspend fun boneBalance():Long = client.postgrest.rpc("get_my_bone_balance").data.trim().toLong()
     suspend fun collection():List<BoneCollectionRow> = client.postgrest.rpc("get_bone_collection").decodeList()
     suspend fun flockMemberCollection(flockId:String,playerId:String):List<BoneCollectionRow> = client.postgrest.rpc("get_flock_member_bone_collection",buildJsonObject { put("p_flock_id",flockId);put("p_member_id",playerId) }).decodeList()
     suspend fun changeName(name:String) = client.postgrest.rpc("change_display_name",buildJsonObject { put("player_name",name) })
