@@ -20,6 +20,7 @@ import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Build
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -138,6 +139,14 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var poiDiscoveryDone by remember { mutableStateOf(false) }
     var walkableDiscoveryDone by remember { mutableStateOf(false) }
     var permissionRefresh by remember { mutableIntStateOf(0) }
+
+    BackHandler(enabled = activePanel != null) {
+        activePanel = null
+        menuOpen = true
+    }
+    BackHandler(enabled = activePanel == null && menuOpen) {
+        menuOpen = false
+    }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionGranted = it
         if (!it) status = context.getString(R.string.status_location_permission_required)
@@ -570,7 +579,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 }==true }
                 GamePanelScreen(
                     panel=panel,profile=currentProfile.copy(boneCount=boneCount.toLong()),api=api,
-                    shopPoi=nearbyShop,poiSettings=poiSettings,onPoiSettings={poiSettings=it},serverActionsEnabled=isOnline,onAdminMapMode={adminMapMode=true;activePanel=null},onNavigate={activePanel=it},onClose={activePanel=null},
+                    shopPoi=nearbyShop,poiSettings=poiSettings,onPoiSettings={poiSettings=it},serverActionsEnabled=isOnline,onAdminMapMode={adminMapMode=true;activePanel=null},onNavigate={activePanel=it},onClose={activePanel=null;menuOpen=true},
                     onBalance={balance->boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=balance)},
                     onProfile={fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()}
                 )
@@ -984,7 +993,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
                         PropertyFactory.iconImage(POI_IMAGE_IDS[index]),
                         PropertyFactory.iconAllowOverlap(false),
                         PropertyFactory.iconIgnorePlacement(false),
-                        PropertyFactory.iconSize(0.055f)
+                        PropertyFactory.iconSize(0.11f)
                     ),
                 BONE_LAYER_IDS.first()
             )

@@ -68,7 +68,7 @@ FBQ är ett enkelt svenskt promenadspel. Kartan och korta interaktioner ska få 
 
 - Fem nivåer kostar 10, 25, 50, 100 och 250 ben.
 - Först till serverbekräftad betalning vinner atomärt. Förloraren debiteras aldrig och får `En annan spelare hann före`.
-- Högar ligger normalt 750–1000 meter isär; ungefär 2–4 syns lokalt. Efter 5–10 minuter återkommer högen 500–1000 meter från sin gamla plats på gångbar mark.
+- Efter fysisk testning höjs tätheten till ungefär 12 aktiva högar inom 3 km från det senaste aktiva området, normalt minst cirka 350 meter isär. Efter 5–10 minuter återkommer högen 500–1000 meter från sin gamla plats på gångbar mark.
 - Exakt ett normalt ben vinns alltid och dess värde är minst kostnaden. Exakt återbetalning ska vara relativt ovanlig och vinst vanlig; liten chans finns till stor vinst.
 - Dubbelvinst per nivå: 0,1 %, 0,2 %, 0,4 %, 0,7 %, 1,0 %. Vid dubbelvinst viktas typen: 50 % två lägsta giltiga, 25 % nästa, 12 % nästa, 7 % nästa och 6 % högre, där exakt bästa möjliga typ är 1 % av dubbelvinsterna. För 250-högen blir dubbelvinst två kungaben.
 - Servern bestämmer resultatet. Hundtematisk snurra pågår högst tre sekunder och kan hoppas över.
@@ -133,4 +133,3 @@ FBQ är ett enkelt svenskt promenadspel. Kartan och korta interaktioner ska få 
 - Klienten delas i data-, domän- och UI-lager; inga nya monoliter. Kritisk domänlogik har enhetstester och databasen har SQL-regressionstester.
 - Hemligheter lagras aldrig i Git. Release använder externa bygghemligheter/signering.
 - Leveransen är versionName `0.400`, versionCode `400`, signerbar APK/AAB, komplett migration och installationsinstruktion.
-

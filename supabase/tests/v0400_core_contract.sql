@@ -123,6 +123,14 @@ begin
      not like '%target_role=''''%' then
     raise exception 'Flock kick does not reject a missing target member';
   end if;
+  if pg_get_functiondef('private.maintain_dirt_piles(double precision,double precision)'::regprocedure)
+     not like '%n<12%' then
+    raise exception 'Dirt-pile maintainer does not target twelve piles within 3 km';
+  end if;
+  if pg_get_functiondef('public.set_home_here()'::regprocedure)
+     not like '%60 seconds%' then
+    raise exception 'Home placement GPS freshness window differs from the tested client flow';
+  end if;
 end $$;
 
 rollback;
