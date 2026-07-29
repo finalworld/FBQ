@@ -81,6 +81,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     val worldRepository = remember { SupabaseProvider.clientOrNull?.let(::WorldRepository) }
     val gameApi = remember { SupabaseProvider.clientOrNull?.let(::GameApiRepository) }
     val tracker = remember { LocationTracker(context) }
+    val foregroundDistanceFilter=remember { se.frasse.bonequest.walking.DistanceFilter() }
     val scope = rememberCoroutineScope()
 
     var permissionGranted by remember {
@@ -109,6 +110,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var lastWorldCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var gpsHasBeenReady by remember { mutableStateOf(false) }
     var gpsWasInError by remember { mutableStateOf(false) }
+    var poiDiscoveryDone by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionGranted = it
         if (!it) status = "GPS-behörighet behövs för att spela"
@@ -167,6 +169,17 @@ internal fun GameScreen(profile:SessionBootstrap) {
             tracker.start { location ->
                 val point = GeoPoint(location.latitude, location.longitude)
                 player = point
+                foregroundDistanceFilter.add(se.frasse.bonequest.walking.LocationSample(
+                    location.latitude,location.longitude,location.accuracy,
+                    location.elapsedRealtimeNanos/1_000_000,location.speed.takeIf{location.hasSpeed()}
+                ))?.let { segment ->
+                    SupabaseProvider.clientOrNull?.let { client -> scope.launch {
+                        val now=System.currentTimeMillis()
+                        runCatching { se.frasse.bonequest.walking.DistanceSyncRepository(client).sync(
+                            se.frasse.bonequest.walking.DistanceBatch(meters=segment.meters.toInt().coerceAtLeast(1),startedAtEpochMillis=now-1_000,endedAtEpochMillis=now)
+                        ) }.onSuccess { currentProfile=currentProfile.copy(totalMeters=currentProfile.totalMeters+segment.meters.toLong()) }
+                    } }
+                }
                 if (location.accuracy <= 25) {
                     if (!gpsHasBeenReady || gpsWasInError) status = "GPS klar"
                     gpsHasBeenReady = true
@@ -183,6 +196,12 @@ internal fun GameScreen(profile:SessionBootstrap) {
                         runCatching { worldRepository.updatePresence(
                             point,location.accuracy,location.bearing,location.speed.takeIf { location.hasSpeed() }
                         ) }.isSuccess
+                        if(location.accuracy<=30&&!poiDiscoveryDone&&gameApi!=null){
+                            poiDiscoveryDone=true
+                            runCatching{OverpassClient.discoverDogPois(point)}.onSuccess{found->
+                                if(found.isNotEmpty())runCatching{gameApi.syncDiscoveredPois(found)}
+                            }.onFailure{poiDiscoveryDone=false}
+                        }
                         if (needsReload && System.currentTimeMillis()-lastWorldLoadAt>5_000) {
                             loadingBones=true
                             runCatching { worldRepository.loadNearby(point) }
@@ -246,6 +265,15 @@ internal fun GameScreen(profile:SessionBootstrap) {
         p!=null&&lat!=null&&lon!=null&&distanceMeters(p.latitude,p.longitude,lat,lon)<=50.0
     }
     LaunchedEffect(nearBone) { selectedBone = nearBone }
+    LaunchedEffect(nearBone?.id) {
+        if(nearBone!=null&&!currentProfile.walkingModeEnabled){
+            if(currentProfile.vibrationEnabled) context.getSystemService(android.os.Vibrator::class.java)
+                ?.vibrate(android.os.VibrationEffect.createOneShot(350,android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+            if(currentProfile.barkEnabled) android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION,75).also { tone->
+                tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2,220);delay(260);tone.release()
+            }
+        }
+    }
 
     MaterialTheme(colorScheme = darkColorScheme()) {
         Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF08131B))) {

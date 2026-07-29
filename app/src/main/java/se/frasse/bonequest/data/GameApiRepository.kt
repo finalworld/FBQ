@@ -6,6 +6,8 @@ import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.put
 import java.util.UUID
 
@@ -54,6 +56,17 @@ import java.util.UUID
     val amount:Double,@SerialName("balance_after") val balanceAfter:Double,val reason:String,
     @SerialName("created_at") val createdAt:String
 )
+@Serializable data class AdminPlayer(
+    @SerialName("player_id") val playerId:String,@SerialName("display_name") val displayName:String,
+    @SerialName("bone_count") val boneCount:Long,@SerialName("is_suspended") val isSuspended:Boolean,
+    @SerialName("requires_new_name") val requiresNewName:Boolean,@SerialName("created_at") val createdAt:String
+)
+@Serializable data class AdminAudit(
+    @SerialName("entry_id") val entryId:Long,@SerialName("admin_id") val adminId:String,
+    val action:String,@SerialName("target_player_id") val targetPlayerId:String?=null,
+    @SerialName("target_object_id") val targetObjectId:String?=null,val reason:String,
+    val details:kotlinx.serialization.json.JsonElement,@SerialName("created_at") val createdAt:String
+)
 
 class GameApiRepository(private val client:SupabaseClient) {
     suspend fun bootstrap():SessionBootstrap = client.postgrest.rpc("get_session_bootstrap").decodeSingle()
@@ -92,5 +105,18 @@ class GameApiRepository(private val client:SupabaseClient) {
     suspend fun transfer(flockId:String,playerId:String) = client.postgrest.rpc("transfer_flock_leadership",buildJsonObject { put("p_flock_id",flockId);put("p_new_leader_id",playerId) })
     suspend fun leave(flockId:String) = client.postgrest.rpc("leave_flock",buildJsonObject { put("p_flock_id",flockId) })
     suspend fun renameFlock(flockId:String,name:String) = client.postgrest.rpc("rename_flock",buildJsonObject { put("p_flock_id",flockId);put("p_new_name",name) })
+    suspend fun adminPlayers(search:String=""):List<AdminPlayer> = client.postgrest.rpc("admin_search_players",buildJsonObject { put("p_search",search) }).decodeList()
+    suspend fun adminAdjustBones(playerId:String,amount:Long,reason:String) = client.postgrest.rpc("admin_adjust_bones",buildJsonObject { put("p_player_id",playerId);put("p_amount",amount);put("p_reason",reason) })
+    suspend fun adminSuspend(playerId:String,reason:String) = client.postgrest.rpc("admin_set_suspension",buildJsonObject { put("p_player_id",playerId);put("p_until",kotlinx.serialization.json.JsonNull);put("p_permanent",true);put("p_reason",reason) })
+    suspend fun adminUnsuspend(playerId:String,reason:String) = client.postgrest.rpc("admin_clear_suspension",buildJsonObject { put("p_player_id",playerId);put("p_reason",reason) })
+    suspend fun adminForceName(playerId:String,name:String,reason:String) = client.postgrest.rpc("admin_force_player_name",buildJsonObject { put("p_player_id",playerId);put("p_new_name",name);put("p_require_new_name",false);put("p_reason",reason) })
+    suspend fun adminPlaceObject(type:String,latitude:Double,longitude:Double,variant:Int,reason:String) = client.postgrest.rpc("admin_upsert_world_object",buildJsonObject {
+        put("p_object_id",kotlinx.serialization.json.JsonNull);put("p_object_type",type);put("p_latitude",latitude);put("p_longitude",longitude);put("p_variant",variant);put("p_reason",reason)
+    })
+    suspend fun audit():List<AdminAudit> = client.postgrest.rpc("admin_get_audit_log",buildJsonObject { put("p_limit",100) }).decodeList()
+    suspend fun deleteAccount(confirmation:String) = client.postgrest.rpc("delete_my_account",buildJsonObject { put("p_confirmation_name",confirmation) })
+    suspend fun syncDiscoveredPois(pois:List<OverpassClient.DiscoveredPoi>) = client.postgrest.rpc("sync_discovered_pois",buildJsonObject {
+        put("p_pois",buildJsonArray { pois.forEach { p->add(buildJsonObject { put("osm_type",p.osmType);put("osm_id",p.osmId);put("poi_type",p.poiType);p.name?.let{put("name",it)};put("latitude",p.latitude);put("longitude",p.longitude);p.address?.let{put("address",it)};p.openingHours?.let{put("opening_hours",it)};p.phone?.let{put("phone",it)};p.website?.let{put("website",it)} }) } })
+    })
     suspend fun signOut() = client.auth.signOut()
 }

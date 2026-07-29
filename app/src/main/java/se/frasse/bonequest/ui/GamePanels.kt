@@ -88,7 +88,7 @@ private val PanelTeal=Color(0xFF168D8A)
                     GamePanel.HOME -> HomePanel(profile,api,onBalance,onProfile)
                     GamePanel.SETTINGS -> SettingsPanel(profile,api,onProfile)
                     GamePanel.SHOP -> ShopPanel(profile,api,shopPoi,onBalance)
-                    GamePanel.ADMIN -> AdminPanel()
+                    GamePanel.ADMIN -> AdminPanel(api)
                 }
             }
         }
@@ -159,14 +159,15 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 }
 
 @Composable private fun SettingsPanel(profile:SessionBootstrap,api:GameApiRepository,onProfile:(SessionBootstrap)->Unit) {
-    val context=LocalContext.current;val scope=rememberCoroutineScope();var walking by remember{mutableStateOf(profile.walkingModeEnabled)};var bark by remember{mutableStateOf(profile.barkEnabled)};var vibration by remember{mutableStateOf(profile.vibrationEnabled)};var saved by remember{mutableStateOf<String?>(null)}
+    val context=LocalContext.current;val scope=rememberCoroutineScope();var walking by remember{mutableStateOf(profile.walkingModeEnabled)};var bark by remember{mutableStateOf(profile.barkEnabled)};var vibration by remember{mutableStateOf(profile.vibrationEnabled)};var saved by remember{mutableStateOf<String?>(null)};var deleting by remember{mutableStateOf(false)};var confirmation by remember{mutableStateOf("")}
     Column(verticalArrangement=Arrangement.spacedBy(13.dp)){
         SettingToggle("Promenadläge","Fortsätter mäta och varnar för ben när skärmen är släckt.",walking){walking=it}
         SettingToggle("Hundskall","Spela ett vänligt voff nära ben.",bark){bark=it}
         SettingToggle("Vibration","Vibrera en gång när du kommer nära ben.",vibration){vibration=it}
         Button(onClick={scope.launch{runCatching{api.updateSettings(walking,bark,vibration)}.onSuccess{WalkingPreferences(context).setEnabled(walking);if(walking)WalkingServiceController.start(context) else WalkingServiceController.stop(context);onProfile(api.bootstrap());saved="Inställningarna är sparade."}.onFailure{saved="Kunde inte spara inställningarna."}}},modifier=Modifier.fillMaxWidth()){Text("SPARA")}
-        saved?.let{Text(it,color=PanelGold)};Spacer(Modifier.weight(1f));OutlinedButton(onClick={scope.launch{api.signOut()}},modifier=Modifier.fillMaxWidth()){Text("LOGGA UT")}
+        saved?.let{Text(it,color=PanelGold)};Spacer(Modifier.weight(1f));OutlinedButton(onClick={scope.launch{api.signOut()}},modifier=Modifier.fillMaxWidth()){Text("LOGGA UT")};TextButton(onClick={deleting=true},modifier=Modifier.fillMaxWidth()){Text("RADERA KONTO",color=Color(0xFFFF6B5D))}
     }
+    if(deleting) AlertDialog(onDismissRequest={deleting=false},title={Text("Radera konto permanent?")},text={Column{Text("Flockledarskap måste först överföras. Skriv ditt exakta spelarnamn för att bekräfta:");OutlinedTextField(confirmation,{confirmation=it},Modifier.fillMaxWidth())}},confirmButton={Button(enabled=confirmation==profile.displayName,onClick={scope.launch{runCatching{api.deleteAccount(confirmation)}.onSuccess{api.signOut()}.onFailure{saved="Kontot kunde inte raderas. Kontrollera flockledarskap och namnet."};deleting=false}}){Text("RADERA")}},dismissButton={TextButton(onClick={deleting=false}){Text("AVBRYT")}})
 }
 @Composable private fun SettingToggle(title:String,help:String,value:Boolean,onChange:(Boolean)->Unit){Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(title,color=PanelCream,fontWeight=FontWeight.Bold);Text(help,color=PanelCream.copy(alpha=.65f),fontSize=12.sp)};Switch(value,onChange)}}
 
@@ -179,4 +180,17 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 }
 private fun roleName(role:String)=when(role){"leader"->"Flockledare";"guard"->"Flockvakt";else->"Flockmedlem"}
 
-@Composable private fun AdminPanel(){Column(verticalArrangement=Arrangement.spacedBy(12.dp)){Text("ADMINLÄGE",color=Color(0xFFFF6B5D),fontSize=26.sp,fontWeight=FontWeight.Black);Text("Adminläget är avskilt från ditt vanliga saldo och din statistik.",color=PanelCream);Text("Kartredigering och spelarverktyg aktiveras i nästa vy från kartan. Alla ändringar kräver orsak och loggas.",color=PanelCream.copy(alpha=.75f));Button(onClick={}){Text("STARTA REDIGERINGSLÄGE")}}}
+@Composable private fun AdminPanel(api:GameApiRepository){
+    val scope=rememberCoroutineScope();var tab by remember{mutableIntStateOf(0)};var search by remember{mutableStateOf("")};var players by remember{mutableStateOf<List<AdminPlayer>>(emptyList())};var selected by remember{mutableStateOf<AdminPlayer?>(null)};var amount by remember{mutableStateOf("")};var reason by remember{mutableStateOf("")};var lat by remember{mutableStateOf("")};var lon by remember{mutableStateOf("")};var variant by remember{mutableStateOf("0")};var type by remember{mutableStateOf("bone")};var message by remember{mutableStateOf<String?>(null)};var audits by remember{mutableStateOf<List<AdminAudit>>(emptyList())}
+    fun find(){scope.launch{players=runCatching{api.adminPlayers(search)}.getOrDefault(emptyList())}}
+    Column{
+        Text("ADMINLÄGE • ändrar aldrig ditt eget normala spel",color=Color(0xFFFF6B5D),fontWeight=FontWeight.Black)
+        TabRow(tab){listOf("SPELARE","PLACERA","LOGG").forEachIndexed{i,t->Tab(tab==i,{tab=i;if(i==2)scope.launch{audits=runCatching{api.audit()}.getOrDefault(emptyList())}},text={Text(t,fontSize=11.sp)})}}
+        message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(7.dp))}
+        when(tab){
+            0->Column{Row{OutlinedTextField(search,{search=it},Modifier.weight(1f),label={Text("Namn eller UUID")});Button(onClick={find()},modifier=Modifier.padding(start=5.dp)){Text("SÖK")}};selected?.let{p->Text(p.displayName,color=PanelGold,fontSize=20.sp);Text("${p.boneCount} ben • ${if(p.isSuspended)"avstängd" else "aktiv"}",color=PanelCream);OutlinedTextField(amount,{amount=it},Modifier.fillMaxWidth(),label={Text("Ben, t.ex. 100 eller -50")});OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text("Obligatorisk orsak")});Row{Button(enabled=reason.length>=3&&amount.toLongOrNull()!=null,onClick={scope.launch{runCatching{api.adminAdjustBones(p.playerId,amount.toLong(),reason)}.onSuccess{message="Saldot ändrades";find()}.onFailure{message="Åtgärden misslyckades"}}}){Text("ÄNDRA BEN")};Button(enabled=reason.length>=3,onClick={scope.launch{runCatching{if(p.isSuspended)api.adminUnsuspend(p.playerId,reason) else api.adminSuspend(p.playerId,reason)}.onSuccess{message="Status ändrad";find()}}},modifier=Modifier.padding(start=5.dp)){Text(if(p.isSuspended)"AKTIVERA" else "STÄNG AV")}}};LazyColumn{items(players){p->Row(Modifier.fillMaxWidth().clickable{selected=p}.padding(10.dp)){Text(p.displayName,Modifier.weight(1f),color=PanelCream);Text(p.boneCount.toString(),color=PanelGold)}}}}
+            1->Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Text("Placera var som helst med koordinater. Varningar kan kringgås av admin.",color=PanelCream);Row{listOf("bone","pile").forEach{x->FilterChip(type==x,{type=x},label={Text(if(x=="bone")"BEN" else "HÖG")},modifier=Modifier.padding(end=5.dp))}};OutlinedTextField(lat,{lat=it},Modifier.fillMaxWidth(),label={Text("Latitud")});OutlinedTextField(lon,{lon=it},Modifier.fillMaxWidth(),label={Text("Longitud")});OutlinedTextField(variant,{variant=it},Modifier.fillMaxWidth(),label={Text(if(type=="bone")"Bentyp 0–11" else "Högtyp 0–4")});OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text("Obligatorisk orsak")});Button(enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={scope.launch{runCatching{api.adminPlaceObject(type,lat.toDouble(),lon.toDouble(),variant.toInt(),reason)}.onSuccess{message="Objektet placerades"}.onFailure{message="Placeringen misslyckades"}}},modifier=Modifier.fillMaxWidth()){Text("PLACERA")}}
+            else->LazyColumn{items(audits){a->Column(Modifier.fillMaxWidth().padding(8.dp)){Text(a.action,color=PanelGold,fontWeight=FontWeight.Bold);Text(a.reason,color=PanelCream);Text(a.createdAt,color=PanelCream.copy(alpha=.6f),fontSize=11.sp)}}}
+        }
+    }
+}
