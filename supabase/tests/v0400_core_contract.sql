@@ -106,6 +106,11 @@ begin
      or not has_function_privilege('authenticated','public.admin_delete_poi(uuid,text)','EXECUTE') then
     raise exception 'Authenticated role cannot reach server-guarded administration RPCs';
   end if;
+  if has_table_privilege('authenticated','private.walkable_spawn_candidates','SELECT')
+     or has_function_privilege('anon','public.sync_walkable_spawn_candidates(jsonb)','EXECUTE')
+     or not has_function_privilege('authenticated','public.sync_walkable_spawn_candidates(jsonb)','EXECUTE') then
+    raise exception 'Walkable world candidate boundary invalid';
+  end if;
 end $$;
 
 rollback;

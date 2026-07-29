@@ -125,15 +125,15 @@ object OverpassClient {
         // Fill gaps so the player normally sees plenty of choices, while keeping
         // enough spacing that the map does not become one solid pile of icons.
         usable.shuffled().forEach { candidate ->
-            if (picked.size >= 30) return@forEach
-            if (picked.all { distanceMeters(it.latitude, it.longitude, candidate.latitude, candidate.longitude) >= 190.0 }) {
+            if (picked.size >= 100) return@forEach
+            if (picked.all { distanceMeters(it.latitude, it.longitude, candidate.latitude, candidate.longitude) >= 100.0 }) {
                 picked += candidate
             }
         }
 
-        picked.take(30).map { point ->
+        picked.take(100).map { point ->
             Bone(
-                id = "v0200_${"%.6f".format(java.util.Locale.US, point.latitude)}_${"%.6f".format(java.util.Locale.US, point.longitude)}",
+                id = "osm_walk_${"%.6f".format(java.util.Locale.US, point.latitude)}_${"%.6f".format(java.util.Locale.US, point.longitude)}",
                 latitude = point.latitude,
                 longitude = point.longitude
             )

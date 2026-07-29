@@ -134,6 +134,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var gpsHasBeenReady by remember { mutableStateOf(false) }
     var gpsWasInError by remember { mutableStateOf(false) }
     var poiDiscoveryDone by remember { mutableStateOf(false) }
+    var walkableDiscoveryDone by remember { mutableStateOf(false) }
     var permissionRefresh by remember { mutableIntStateOf(0) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionGranted = it
@@ -255,6 +256,16 @@ internal fun GameScreen(profile:SessionBootstrap) {
                             runCatching{OverpassClient.discoverDogPois(point)}.onSuccess{found->
                                 if(found.isNotEmpty())runCatching{gameApi.syncDiscoveredPois(found)}
                             }.onFailure{poiDiscoveryDone=false}
+                        }
+                        if(location.accuracy<=30&&!walkableDiscoveryDone&&gameApi!=null){
+                            walkableDiscoveryDone=true
+                            runCatching{OverpassClient.generateBones(point)}.onSuccess{walkable->
+                                if(walkable.isNotEmpty()){
+                                    runCatching{gameApi.syncWalkableSpawnPoints(walkable)}
+                                    runCatching{worldRepository.updatePresence(point,location.accuracy,location.bearing,location.speed.takeIf{location.hasSpeed()})}
+                                    runCatching{worldRepository.loadNearby(point)}.onSuccess{snapshot->bones=snapshot.bones;piles=snapshot.piles}
+                                }
+                            }.onFailure{walkableDiscoveryDone=false}
                         }
                         if (needsReload && System.currentTimeMillis()-lastWorldLoadAt>5_000) {
                             loadingBones=true

@@ -133,5 +133,10 @@ class GameApiRepository(private val client:SupabaseClient) {
     suspend fun syncDiscoveredPois(pois:List<OverpassClient.DiscoveredPoi>) = client.postgrest.rpc("sync_discovered_pois",buildJsonObject {
         put("p_pois",buildJsonArray { pois.forEach { p->add(buildJsonObject { put("osm_type",p.osmType);put("osm_id",p.osmId);put("poi_type",p.poiType);p.name?.let{put("name",it)};put("latitude",p.latitude);put("longitude",p.longitude);p.address?.let{put("address",it)};p.openingHours?.let{put("opening_hours",it)};p.phone?.let{put("phone",it)};p.website?.let{put("website",it)} }) } })
     })
+    suspend fun syncWalkableSpawnPoints(points:List<Bone>) = client.postgrest.rpc("sync_walkable_spawn_candidates",buildJsonObject {
+        put("p_points",buildJsonArray { points.forEach { p->add(buildJsonObject {
+            put("source_key",p.id);put("latitude",p.latitude);put("longitude",p.longitude)
+        }) } })
+    })
     suspend fun signOut() = client.auth.signOut()
 }
