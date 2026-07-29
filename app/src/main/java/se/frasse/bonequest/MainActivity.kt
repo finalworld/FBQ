@@ -106,6 +106,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var lastWorldCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var gpsHasBeenReady by remember { mutableStateOf(false) }
     var gpsWasInError by remember { mutableStateOf(false) }
+    var startupTestBonePlaced by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionGranted = it
         if (!it) status = "GPS-behörighet behövs för att spela"
@@ -159,6 +160,13 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     gpsWasInError = true
                 }
                 if (worldRepository!=null) {
+                    if (location.accuracy <= 25 && !startupTestBonePlaced) {
+                        startupTestBonePlaced = true
+                        scope.launch {
+                            runCatching { worldRepository.placeStartupTestBone(point) }
+                                .onFailure { startupTestBonePlaced = false }
+                        }
+                    }
                     val needsReload=lastWorldCenter?.let {
                         distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>100
                     } ?: true

@@ -105,6 +105,12 @@ class WorldRepository(private val client:SupabaseClient) {
         })
     }
 
+    suspend fun placeStartupTestBone(point:GeoPoint) {
+        client.postgrest.rpc("place_startup_test_bone",buildJsonObject {
+            put("latitude",point.latitude); put("longitude",point.longitude)
+        })
+    }
+
     suspend fun nearbyPlayers():List<NearbyPlayer> =
         client.postgrest.rpc("list_nearby_players").decodeList()
 
