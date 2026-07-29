@@ -116,8 +116,9 @@ class GameApiRepository(private val client:SupabaseClient) {
     suspend fun adminUnsuspend(playerId:String,reason:String) = client.postgrest.rpc("admin_clear_suspension",buildJsonObject { put("p_player_id",playerId);put("p_reason",reason) })
     suspend fun adminForceName(playerId:String,name:String,reason:String) = client.postgrest.rpc("admin_force_player_name",buildJsonObject { put("p_player_id",playerId);put("p_new_name",name);put("p_require_new_name",false);put("p_reason",reason) })
     suspend fun adminSetItem(playerId:String,itemId:String,grant:Boolean,reason:String) = client.postgrest.rpc("admin_set_player_item",buildJsonObject { put("p_player_id",playerId);put("p_item_id",itemId);put("p_grant",grant);put("p_reason",reason) })
-    suspend fun adminPlaceObject(type:String,latitude:Double,longitude:Double,variant:Int,reason:String) = client.postgrest.rpc("admin_upsert_world_object",buildJsonObject {
-        put("p_object_id",kotlinx.serialization.json.JsonNull);put("p_object_type",type);put("p_latitude",latitude);put("p_longitude",longitude);put("p_variant",variant);put("p_reason",reason)
+    suspend fun adminPlaceObject(type:String,latitude:Double,longitude:Double,variant:Int,reason:String,objectId:String?=null) = client.postgrest.rpc("admin_upsert_world_object",buildJsonObject {
+        if(objectId.isNullOrBlank()) put("p_object_id",kotlinx.serialization.json.JsonNull) else put("p_object_id",objectId)
+        put("p_object_type",type);put("p_latitude",latitude);put("p_longitude",longitude);put("p_variant",variant);put("p_reason",reason)
     })
     suspend fun adminUpsertPoi(id:String?,type:String,name:String,latitude:Double,longitude:Double,hasShop:Boolean,reason:String)=client.postgrest.rpc("admin_upsert_poi",buildJsonObject{
         if(id.isNullOrBlank())put("p_poi_id",kotlinx.serialization.json.JsonNull) else put("p_poi_id",id)

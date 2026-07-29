@@ -1,5 +1,7 @@
 package se.frasse.bonequest
 
+import androidx.compose.ui.res.stringResource
+
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -381,11 +383,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
             )
 
             if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=102.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
-                Text("OFFLINE • kartan kan visas, men spelåtgärder är låsta",Modifier.padding(horizontal=12.dp,vertical=7.dp),color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black,fontSize=12.sp)
+                Text(stringResource(R.string.ui_text_049),Modifier.padding(horizontal=12.dp,vertical=7.dp),color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black,fontSize=12.sp)
             }
 
             if(adminMapMode) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=104.dp).zIndex(5f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)) {
-                Row(Modifier.padding(horizontal=12.dp,vertical=7.dp),verticalAlignment=Alignment.CenterVertically){Text("ADMINLÄGE • tryck på kartan för att placera",color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black);TextButton(onClick={adminMapMode=false}){Text("AVSLUTA",color=androidx.compose.ui.graphics.Color.White)}}
+                Row(Modifier.padding(horizontal=12.dp,vertical=7.dp),verticalAlignment=Alignment.CenterVertically){Text(stringResource(R.string.ui_text_003),color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black);TextButton(onClick={adminMapMode=false}){Text(stringResource(R.string.ui_text_007),color=androidx.compose.ui.graphics.Color.White)}}
             }
 
             if (!followPlayer) {
@@ -393,7 +395,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     onClick = { followPlayer = true },
                     modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(18.dp),
                     containerColor = androidx.compose.ui.graphics.Color(0xFF213141)
-                ) { Text("◎", fontSize = 28.sp) }
+                ) { Text(stringResource(R.string.ui_text_088), fontSize = 28.sp) }
             }
 
             selectedBone?.let { bone ->
@@ -478,11 +480,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
             }
             pendingPileReward?.let { reward->
                 Surface(Modifier.align(Alignment.Center).padding(24.dp),color=androidx.compose.ui.graphics.Color(0xF21A2022),shape=RoundedCornerShape(8.dp)){
-                    Column(Modifier.padding(22.dp),horizontalAlignment=Alignment.CenterHorizontally){Text("JORDFYND",color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=24.sp,fontWeight=FontWeight.Black);Text("🦴  🐾  🦴  🎾  🦴",fontSize=28.sp);LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical=12.dp));TextButton(onClick={status="Jordhögen gav +${reward.rewardValue} ben${if(reward.isDouble)" • DUBBELVINST!" else ""}";pendingPileReward=null}){Text("HOPPA ÖVER")}}
+                    Column(Modifier.padding(22.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(stringResource(R.string.ui_text_032),color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=24.sp,fontWeight=FontWeight.Black);Text(stringResource(R.string.ui_text_091),fontSize=28.sp);LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical=12.dp));TextButton(onClick={status="Jordhögen gav +${reward.rewardValue} ben${if(reward.isDouble)" • DUBBELVINST!" else ""}";pendingPileReward=null}){Text(stringResource(R.string.ui_text_030))}}
                 }
             }
             pileToConfirm?.let{pile->
-                AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text("Gräv upp jordhögen?")},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Image(painterResource(dirtDrawable(pile.type)),null,Modifier.size(82.dp).align(Alignment.CenterHorizontally));Text("Det kostar ${pile.cost} ben. Du får alltid minst samma värde tillbaka och snurran tar högst tre sekunder.")}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{if(worldRepository!=null)runCatching{worldRepository.openPile(pile.id)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status="🐾 Gräver… snurran väljer ben"},onFailure={status=if(it.message?.contains("PILE_ALREADY_CLAIMED")==true)"En annan spelare hann före – dina ben drogs inte." else "Kunde inte gräva upp högen"});collecting=false;selectedPile=null;pileToConfirm=null}}){Text("BETALA ${pile.cost} BEN")}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text("AVBRYT")}})
+                AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text(stringResource(R.string.ui_text_027))},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Image(painterResource(dirtDrawable(pile.type)),null,Modifier.size(82.dp).align(Alignment.CenterHorizontally));Text("Det kostar ${pile.cost} ben. Du får alltid minst samma värde tillbaka och snurran tar högst tre sekunder.")}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{if(worldRepository!=null)runCatching{worldRepository.openPile(pile.id)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status="🐾 Gräver… snurran väljer ben"},onFailure={status=if(it.message?.contains("PILE_ALREADY_CLAIMED")==true)"En annan spelare hann före – dina ben drogs inte." else "Kunde inte gräva upp högen"});collecting=false;selectedPile=null;pileToConfirm=null}}){Text("BETALA ${pile.cost} BEN")}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text(stringResource(R.string.ui_text_006))}})
             }
             if (statusText != null) {
                 val actionCount=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)+(if(nearShop!=null)1 else 0)+(if(atHome)1 else 0)
@@ -512,25 +514,25 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     Text("Öppnade jordhögar: ${st.totalDirtPilesOpened}")
                     Text("Medlem sedan: ${java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date(st.memberSince))}")
                 }
-            }, confirmButton={TextButton(onClick={profileOpen=false}){Text("STÄNG")}})
+            }, confirmButton={TextButton(onClick={profileOpen=false}){Text(stringResource(R.string.ui_text_064))}})
         }
 
         if (menuOpen && gameApi == null) {
             AlertDialog(
                 onDismissRequest = { menuOpen = false },
-                title = { Text("Frasse’s Bone Quest") },
+                title = { Text(stringResource(R.string.ui_text_023)) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Version 0.400")
-                        Button(onClick = { menuOpen=false; profileOpen=true }, modifier = Modifier.fillMaxWidth()) { Text("MIN PROFIL") }
-                        Text("Serverläge förberett – P2P är helt borttaget.", fontSize = 13.sp)
+                        Text(stringResource(R.string.ui_text_079))
+                        Button(onClick = { menuOpen=false; profileOpen=true }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.ui_text_040)) }
+                        Text(stringResource(R.string.ui_text_066), fontSize = 13.sp)
                         Text("Samlade ben: $boneCount", fontWeight = FontWeight.Bold)
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { (context as? Activity)?.finishAffinity() }) { Text("STÄNG APPEN") }
+                    TextButton(onClick = { (context as? Activity)?.finishAffinity() }) { Text(stringResource(R.string.ui_text_065)) }
                 },
-                dismissButton = { TextButton(onClick = { menuOpen = false }) { Text("TILLBAKA") } }
+                dismissButton = { TextButton(onClick = { menuOpen = false }) { Text(stringResource(R.string.ui_text_077)) } }
             )
         }
         if (menuOpen && gameApi != null) {
@@ -555,16 +557,16 @@ internal fun GameScreen(profile:SessionBootstrap) {
         }
         selectedPoi?.let { poi ->
             val distance=player?.let{distanceMeters(it.latitude,it.longitude,poi.latitude,poi.longitude).toInt()}
-            AlertDialog(onDismissRequest={selectedPoi=null},title={Text(poi.name?:poiTypeName(poi.poiType))},text={Column(verticalArrangement=Arrangement.spacedBy(5.dp)){Text(poiTypeName(poi.poiType));poi.address?.let{Text(it)};poi.openingHours?.let{Text("Öppet: $it")};poi.phone?.let{Text("Telefon: $it")};poi.website?.let{Text(it,color=androidx.compose.ui.graphics.Color(0xFF5BC8C5))};Text("${distance?:0} m bort");if(poi.hasGameShop)Text("Här finns en spelbutik.",fontWeight=FontWeight.Bold)}},confirmButton={Button(onClick={val uri=Uri.parse("geo:${poi.latitude},${poi.longitude}?q=${poi.latitude},${poi.longitude}(${Uri.encode(poi.name?:"Hundplats")})");context.startActivity(Intent(Intent.ACTION_VIEW,uri));selectedPoi=null}){Text("VÄGBESKRIVNING")}},dismissButton={TextButton(onClick={selectedPoi=null}){Text("STÄNG")}})
+            AlertDialog(onDismissRequest={selectedPoi=null},title={Text(poi.name?:poiTypeName(poi.poiType))},text={Column(verticalArrangement=Arrangement.spacedBy(5.dp)){Text(poiTypeName(poi.poiType));poi.address?.let{Text(it)};poi.openingHours?.let{Text("Öppet: $it")};poi.phone?.let{Text("Telefon: $it")};poi.website?.let{Text(it,color=androidx.compose.ui.graphics.Color(0xFF5BC8C5))};Text("${distance?:0} m bort");if(poi.hasGameShop)Text(stringResource(R.string.ui_text_031),fontWeight=FontWeight.Bold)}},confirmButton={Button(onClick={val uri=Uri.parse("geo:${poi.latitude},${poi.longitude}?q=${poi.latitude},${poi.longitude}(${Uri.encode(poi.name?:"Hundplats")})");context.startActivity(Intent(Intent.ACTION_VIEW,uri));selectedPoi=null}){Text(stringResource(R.string.ui_text_080))}},dismissButton={TextButton(onClick={selectedPoi=null}){Text(stringResource(R.string.ui_text_064))}})
         }
         if(homeInfoOpen){
             val homeDistance=player?.let{p->currentProfile.homeLat?.let{lat->currentProfile.homeLon?.let{lon->distanceMeters(p.latitude,p.longitude,lat,lon).toInt()}}}
             val nextMove=currentProfile.homeChangedAt?.let{stamp->runCatching{java.time.Instant.parse(stamp).plus(java.time.Duration.ofHours(24)).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}.getOrNull()}
-            AlertDialog(onDismissRequest={homeInfoOpen=false},title={Text("Mitt hem")},text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Avstånd: ${homeDistance?.let{"$it m"}?:"okänt"}");Text(if(atHome)"Du är hemma och kan använda hemmaautomaten." else "Hemfunktionerna låses upp inom 50 meter.");nextMove?.let{Text("Hemmet kan flyttas igen: $it")}}},confirmButton={if(atHome)Button(onClick={homeInfoOpen=false;activePanel=GamePanel.HOME}){Text("BESÖK HEMMET")}else TextButton(onClick={homeInfoOpen=false}){Text("STÄNG")}})
+            AlertDialog(onDismissRequest={homeInfoOpen=false},title={Text(stringResource(R.string.ui_text_042))},text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Avstånd: ${homeDistance?.let{"$it m"}?:"okänt"}");Text(if(atHome)"Du är hemma och kan använda hemmaautomaten." else "Hemfunktionerna låses upp inom 50 meter.");nextMove?.let{Text("Hemmet kan flyttas igen: $it")}}},confirmButton={if(atHome)Button(onClick={homeInfoOpen=false;activePanel=GamePanel.HOME}){Text(stringResource(R.string.ui_text_010))}else TextButton(onClick={homeInfoOpen=false}){Text(stringResource(R.string.ui_text_064))}})
         }
         adminPlacement?.let { point ->
             var objectType by remember(point){mutableStateOf("bone")};var variant by remember(point){mutableStateOf("0")};var reason by remember(point){mutableStateOf("Manuell kartplacering")};var busy by remember(point){mutableStateOf(false)}
-            AlertDialog(onDismissRequest={if(!busy)adminPlacement=null},title={Text("Placera spelobjekt")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("${"%.6f".format(point.latitude)}, ${"%.6f".format(point.longitude)}");Row{FilterChip(objectType=="bone",{objectType="bone"},label={Text("BEN")});Spacer(Modifier.width(8.dp));FilterChip(objectType=="pile",{objectType="pile"},label={Text("JORDHÖG")})};OutlinedTextField(variant,{variant=it.filter(Char::isDigit).take(2)},label={Text(if(objectType=="bone")"Bentyp 0–11" else "Högtyp 0–4")});OutlinedTextField(reason,{reason=it},label={Text("Orsak")})}},confirmButton={Button(enabled=!busy&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={busy=true;scope.launch{runCatching{gameApi?.adminPlaceObject(objectType,point.latitude,point.longitude,variant.toInt(),reason)}.onSuccess{status="Adminobjekt placerat";adminPlacement=null}.onFailure{status="Placeringen misslyckades: ${it.message.orEmpty()}";busy=false}}}){Text("PLACERA")}},dismissButton={TextButton(onClick={adminPlacement=null}){Text("AVBRYT")}})
+            AlertDialog(onDismissRequest={if(!busy)adminPlacement=null},title={Text(stringResource(R.string.ui_text_055))},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("${"%.6f".format(point.latitude)}, ${"%.6f".format(point.longitude)}");Row{FilterChip(objectType=="bone",{objectType="bone"},label={Text(stringResource(R.string.ui_text_009))});Spacer(Modifier.width(8.dp));FilterChip(objectType=="pile",{objectType="pile"},label={Text(stringResource(R.string.ui_text_033))})};OutlinedTextField(variant,{variant=it.filter(Char::isDigit).take(2)},label={Text(if(objectType=="bone")"Bentyp 0–11" else "Högtyp 0–4")});OutlinedTextField(reason,{reason=it},label={Text(stringResource(R.string.ui_text_052))})}},confirmButton={Button(enabled=!busy&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={busy=true;scope.launch{runCatching{gameApi?.adminPlaceObject(objectType,point.latitude,point.longitude,variant.toInt(),reason)}.onSuccess{status="Adminobjekt placerat";adminPlacement=null}.onFailure{status="Placeringen misslyckades: ${it.message.orEmpty()}";busy=false}}}){Text(stringResource(R.string.ui_text_053))}},dismissButton={TextButton(onClick={adminPlacement=null}){Text(stringResource(R.string.ui_text_006))}})
         }
     }
 }
@@ -716,7 +718,7 @@ private fun GameMap(
                     )
                     val features = libreMap.queryRenderedFeatures(
                         hitArea,
-                        *(BONE_LAYER_IDS + PILE_LAYER_IDS + POI_LAYER_IDS + arrayOf(HOME_LAYER_ID,PLAYER_LAYER_ID))
+                        *(BONE_LAYER_IDS + PILE_LAYER_IDS + POI_LAYER_IDS + arrayOf(POI_SHOP_LAYER_ID,HOME_LAYER_ID,PLAYER_LAYER_ID))
                     )
                     val boneIds = features.mapNotNull {
                         it.properties()?.get(BONE_ID_PROPERTY)?.asString
@@ -850,6 +852,8 @@ private val BONE_LAYER_IDS = Array(12) { index -> "frasse-bones-layer-${index + 
 private const val POI_SOURCE_ID = "frasse-pois-source"
 private const val POI_CLUSTER_LAYER_ID="frasse-poi-clusters"
 private const val POI_CLUSTER_COUNT_LAYER_ID="frasse-poi-cluster-count"
+private const val POI_SHOP_LAYER_ID="frasse-poi-shop-badge-layer"
+private const val POI_SHOP_IMAGE_ID="frasse-poi-shop-badge"
 private const val POI_TYPE_PROPERTY = "poiType"
 private val POI_TYPES = arrayOf("dog_park", "pet_shop", "veterinary", "grooming", "dog_wash")
 private val POI_IMAGE_IDS = arrayOf("frasse-poi-dog-park", "frasse-poi-pet-shop", "frasse-poi-veterinary", "frasse-poi-grooming", "frasse-poi-grooming")
@@ -859,6 +863,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
     style.addImage(PLAYER_IMAGE_ID, defaultMarkerBitmap(context))
     style.addImage(HOME_IMAGE_ID,homeBitmap())
     style.addImage(GLINT_IMAGE_ID,glintBitmap())
+    style.addImage(POI_SHOP_IMAGE_ID,shopBadgeBitmap())
     intArrayOf(Color.rgb(22,141,138),Color.rgb(226,170,61),Color.rgb(80,145,220)).forEachIndexed{i,color->style.addImage(FLOCK_DOT_IMAGE_IDS[i],dotBitmap(color))}
 
     val boneDrawables = intArrayOf(
@@ -964,6 +969,11 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
             )
         }
     }
+    if(style.getLayer(POI_SHOP_LAYER_ID)==null)style.addLayer(
+        SymbolLayer(POI_SHOP_LAYER_ID,POI_SOURCE_ID)
+            .withFilter(Expression.eq(Expression.get("hasGameShop"),Expression.literal(true)))
+            .withProperties(PropertyFactory.iconImage(POI_SHOP_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconOffset(arrayOf(24f,-24f)),PropertyFactory.iconSize(.72f))
+    )
 }
 
 private fun pileFeatureCollection(piles: List<DirtPile>): FeatureCollection = FeatureCollection.fromFeatures(piles.map { pile -> Feature.fromGeometry(Point.fromLngLat(pile.longitude,pile.latitude)).apply { addStringProperty(PILE_ID_PROPERTY,pile.id); addNumberProperty("pileType",pile.type.coerceIn(0,4)) } })
@@ -979,6 +989,7 @@ private fun poiFeatureCollection(pois: List<MapPoi>): FeatureCollection = Featur
         Feature.fromGeometry(Point.fromLngLat(poi.longitude, poi.latitude)).apply {
             addStringProperty(POI_TYPE_PROPERTY, poi.poiType)
             addStringProperty("poiId", poi.poiId)
+            addBooleanProperty("hasGameShop",poi.hasGameShop)
             poi.name?.let { addStringProperty("name", it) }
         }
     }
@@ -1031,6 +1042,13 @@ private fun glintBitmap():Bitmap{
     p.color=Color.rgb(255,210,72);p.strokeWidth=5f
     c.drawLine(32f,4f,32f,60f,p);c.drawLine(4f,32f,60f,32f,p);c.drawLine(13f,13f,51f,51f,p);c.drawLine(51f,13f,13f,51f,p)
     p.color=Color.WHITE;c.drawCircle(32f,32f,7f,p);return b
+}
+
+private fun shopBadgeBitmap():Bitmap{
+    val b=Bitmap.createBitmap(48,48,Bitmap.Config.ARGB_8888);val c=Canvas(b);val p=Paint(Paint.ANTI_ALIAS_FLAG)
+    p.color=Color.rgb(18,24,27);c.drawCircle(24f,24f,23f,p);p.color=Color.rgb(226,170,61);c.drawCircle(24f,24f,19f,p)
+    p.color=Color.rgb(18,24,27);c.drawRect(13f,20f,35f,35f,p);p.style=Paint.Style.STROKE;p.strokeWidth=4f;c.drawArc(17f,10f,31f,27f,180f,180f,false,p)
+    return b
 }
 
 private fun dotBitmap(color:Int):Bitmap{val b=Bitmap.createBitmap(24,24,Bitmap.Config.ARGB_8888);val c=Canvas(b);val p=Paint(Paint.ANTI_ALIAS_FLAG);p.color=Color.BLACK;c.drawCircle(12f,12f,11f,p);p.color=color;c.drawCircle(12f,12f,8f,p);return b}

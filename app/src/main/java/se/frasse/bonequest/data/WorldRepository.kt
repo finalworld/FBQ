@@ -114,12 +114,16 @@ class WorldRepository(private val client:SupabaseClient) {
     suspend fun nearbyPlayers():List<NearbyPlayer> =
         client.postgrest.rpc("list_nearby_players").decodeList()
 
-    suspend fun mapPois(bounds:MapBounds):List<MapPoi> = client.postgrest.rpc(
+    suspend fun mapPois(bounds:MapBounds):List<MapPoi> {
+        val latBuffer=(bounds.maxLat-bounds.minLat).coerceAtLeast(0.002)*0.25
+        val lonBuffer=(bounds.maxLon-bounds.minLon).coerceAtLeast(0.002)*0.25
+        return client.postgrest.rpc(
         "list_map_pois",buildJsonObject {
-            put("min_lat",bounds.minLat); put("min_lon",bounds.minLon)
-            put("max_lat",bounds.maxLat); put("max_lon",bounds.maxLon)
+            put("min_lat",bounds.minLat-latBuffer); put("min_lon",bounds.minLon-lonBuffer)
+            put("max_lat",bounds.maxLat+latBuffer); put("max_lon",bounds.maxLon+lonBuffer)
         }
-    ).decodeList()
+        ).decodeList()
+    }
 
     suspend fun collectNearbyBones():List<CollectResult> =
         client.postgrest.rpc("collect_nearby_bones").decodeList()

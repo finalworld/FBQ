@@ -124,7 +124,7 @@ private fun LoginScreen(onGoogle: () -> Unit) {
         Modifier.fillMaxSize().background(FrasseCharcoal).padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.Center
     ) {
-        Text("🐾",fontSize=68.sp); Spacer(Modifier.height(20.dp))
+        Text(stringResource(R.string.ui_text_089),fontSize=68.sp); Spacer(Modifier.height(20.dp))
         Text(stringResource(R.string.login_title),fontSize=30.sp,fontWeight=FontWeight.Bold,color=FrasseGold)
         Spacer(Modifier.height(10.dp)); Text(stringResource(R.string.login_subtitle),color=FrasseCream)
         Spacer(Modifier.height(34.dp))
