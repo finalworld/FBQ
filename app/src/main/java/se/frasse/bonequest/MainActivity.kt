@@ -259,7 +259,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     val distance = player?.let { p ->
                         distanceMeters(p.latitude, p.longitude, bone.latitude, bone.longitude).toInt()
                     }
-                    status = "BEN  •  VÄRDE ${boneValue(bone.type)}  •  ${distance?.let { "$it M" } ?: "OKÄNT AVSTÅND"}"
+                    status = "${BONE_NAMES[bone.type.coerceIn(BONE_NAMES.indices)].uppercase()}  •  VÄRDE ${boneValue(bone.type)}  •  ${distance?.let { "$it M" } ?: "OKÄNT AVSTÅND"}"
                 },
                 onPlayerTapped = { profileOpen = true },
                 onPileTapped = { pile ->
@@ -540,20 +540,33 @@ private fun GameMap(
                         screenPoint.x - 28f, screenPoint.y - 28f,
                         screenPoint.x + 28f, screenPoint.y + 28f
                     )
-                    val feature = libreMap.queryRenderedFeatures(
+                    val features = libreMap.queryRenderedFeatures(
                         hitArea,
                         *(BONE_LAYER_IDS + PILE_LAYER_IDS + arrayOf(PLAYER_LAYER_ID))
-                    ).firstOrNull()
-                    val boneId = feature
-                        ?.properties()
-                        ?.get(BONE_ID_PROPERTY)
-                        ?.asString
-                    if (boneId != null) {
-                        latestBones.firstOrNull { it.id == boneId }?.let(latestBoneTap); true
+                    )
+                    val boneIds = features.mapNotNull {
+                        it.properties()?.get(BONE_ID_PROPERTY)?.asString
+                    }.toSet()
+                    val tappedBone = latestBones
+                        .asSequence()
+                        .filter { it.id in boneIds }
+                        .minByOrNull {
+                            distanceMeters(latLng.latitude, latLng.longitude, it.latitude, it.longitude)
+                        }
+                    if (tappedBone != null) {
+                        latestBoneTap(tappedBone); true
                     } else {
-                        val pileId = feature?.properties()?.get(PILE_ID_PROPERTY)?.asString
-                        if (pileId != null) { latestPiles.firstOrNull { it.id == pileId }?.let(latestPileTap); true }
-                        else if (feature != null) { latestPlayerTap(); true } else false
+                        val pileIds = features.mapNotNull {
+                            it.properties()?.get(PILE_ID_PROPERTY)?.asString
+                        }.toSet()
+                        val tappedPile = latestPiles
+                            .asSequence()
+                            .filter { it.id in pileIds }
+                            .minByOrNull {
+                                distanceMeters(latLng.latitude, latLng.longitude, it.latitude, it.longitude)
+                            }
+                        if (tappedPile != null) { latestPileTap(tappedPile); true }
+                        else if (features.isNotEmpty()) { latestPlayerTap(); true } else false
                     }
                 }
             }
