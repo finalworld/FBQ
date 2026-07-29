@@ -119,6 +119,14 @@ class GameApiRepository(private val client:SupabaseClient) {
     suspend fun adminPlaceObject(type:String,latitude:Double,longitude:Double,variant:Int,reason:String) = client.postgrest.rpc("admin_upsert_world_object",buildJsonObject {
         put("p_object_id",kotlinx.serialization.json.JsonNull);put("p_object_type",type);put("p_latitude",latitude);put("p_longitude",longitude);put("p_variant",variant);put("p_reason",reason)
     })
+    suspend fun adminUpsertPoi(id:String?,type:String,name:String,latitude:Double,longitude:Double,hasShop:Boolean,reason:String)=client.postgrest.rpc("admin_upsert_poi",buildJsonObject{
+        if(id.isNullOrBlank())put("p_poi_id",kotlinx.serialization.json.JsonNull) else put("p_poi_id",id)
+        put("p_poi_type",type);put("p_name",name);put("p_latitude",latitude);put("p_longitude",longitude)
+        put("p_address",kotlinx.serialization.json.JsonNull);put("p_opening_hours",kotlinx.serialization.json.JsonNull);put("p_phone",kotlinx.serialization.json.JsonNull);put("p_website",kotlinx.serialization.json.JsonNull)
+        put("p_has_game_shop",hasShop);put("p_reason",reason)
+    })
+    suspend fun adminDeletePoi(id:String,reason:String)=client.postgrest.rpc("admin_delete_poi",buildJsonObject{put("p_poi_id",id);put("p_reason",reason)})
+    suspend fun adminDeleteWorldObject(id:String,type:String,reason:String)=client.postgrest.rpc("admin_delete_world_object",buildJsonObject{put("p_object_id",id);put("p_object_type",type);put("p_reason",reason)})
     suspend fun audit():List<AdminAudit> = client.postgrest.rpc("admin_get_audit_log",buildJsonObject { put("p_limit",100) }).decodeList()
     suspend fun deleteAccount(confirmation:String) = client.postgrest.rpc("delete_my_account",buildJsonObject { put("p_confirmation_name",confirmation) })
     suspend fun syncDiscoveredPois(pois:List<OverpassClient.DiscoveredPoi>) = client.postgrest.rpc("sync_discovered_pois",buildJsonObject {

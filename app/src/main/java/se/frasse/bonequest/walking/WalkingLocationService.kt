@@ -8,8 +8,6 @@ import android.content.pm.PackageManager
 import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
-import android.media.AudioManager
-import android.media.ToneGenerator
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
@@ -19,6 +17,7 @@ import se.frasse.bonequest.R
 import se.frasse.bonequest.SupabaseProvider
 import se.frasse.bonequest.GeoPoint
 import se.frasse.bonequest.WorldRepository
+import se.frasse.bonequest.audio.DogBarkPlayer
 import kotlinx.coroutines.flow.first
 import java.text.NumberFormat
 import java.util.Locale
@@ -143,12 +142,7 @@ class WalkingLocationService : Service() {
             getSystemService(Vibrator::class.java)?.vibrate(VibrationEffect.createOneShot(450,VibrationEffect.DEFAULT_AMPLITUDE))
         }
         if(preferences.barkEnabled.first()) {
-            withContext(Dispatchers.Main) {
-                ToneGenerator(AudioManager.STREAM_NOTIFICATION,80).also { tone ->
-                    tone.startTone(ToneGenerator.TONE_PROP_BEEP2,180)
-                    serviceScope.launch { delay(230);withContext(Dispatchers.Main){tone.startTone(ToneGenerator.TONE_PROP_BEEP2,220)};delay(260);tone.release() }
-                }
-            }
+            DogBarkPlayer.play()
         }
     }
 

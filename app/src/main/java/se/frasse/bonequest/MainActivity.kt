@@ -12,6 +12,9 @@ import android.graphics.RectF
 import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Build
 import androidx.activity.ComponentActivity
@@ -46,6 +49,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.conflate
 import se.frasse.bonequest.walking.WalkingServiceController
+import se.frasse.bonequest.audio.DogBarkPlayer
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -54,9 +58,11 @@ import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.Point
@@ -88,6 +94,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
     val foregroundDistanceFilter=remember { se.frasse.bonequest.walking.DistanceFilter() }
     val foregroundDistanceQueue=remember { se.frasse.bonequest.walking.DistanceQueue(context) }
     val scope = rememberCoroutineScope()
+    val connectivityManager=remember{context.getSystemService(ConnectivityManager::class.java)}
+    var isOnline by remember{mutableStateOf(connectivityManager.isCurrentlyOnline())}
 
     var permissionGranted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
@@ -107,7 +115,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var followPlayer by remember { mutableStateOf(true) }
     var selectedBone by remember { mutableStateOf<Bone?>(null) }
     var selectedPile by remember { mutableStateOf<DirtPile?>(null) }
+    var pileToConfirm by remember { mutableStateOf<DirtPile?>(null) }
     var selectedPoi by remember { mutableStateOf<MapPoi?>(null) }
+    var homeInfoOpen by remember { mutableStateOf(false) }
     var pendingPileReward by remember { mutableStateOf<PileResult?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var profileOpen by remember { mutableStateOf(false) }
@@ -116,6 +126,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var adminMapMode by remember { mutableStateOf(false) }
     var adminPlacement by remember { mutableStateOf<GeoPoint?>(null) }
     var collecting by remember { mutableStateOf(false) }
+    var collectionGlints by remember { mutableStateOf(emptyList<GeoPoint>()) }
     var lastWorldLoadAt by remember { mutableLongStateOf(0L) }
     var lastWorldCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var gpsHasBeenReady by remember { mutableStateOf(false) }
@@ -125,6 +136,16 @@ internal fun GameScreen(profile:SessionBootstrap) {
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionGranted = it
         if (!it) status = "GPS-behörighet behövs för att spela"
+    }
+
+    DisposableEffect(connectivityManager){
+        val callback=object:ConnectivityManager.NetworkCallback(){
+            override fun onAvailable(network:Network){isOnline=connectivityManager.isCurrentlyOnline()}
+            override fun onLost(network:Network){isOnline=connectivityManager.isCurrentlyOnline()}
+            override fun onCapabilitiesChanged(network:Network,caps:NetworkCapabilities){isOnline=caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)}
+        }
+        connectivityManager.registerDefaultNetworkCallback(callback)
+        onDispose{runCatching{connectivityManager.unregisterNetworkCallback(callback)}}
     }
     val backgroundPermissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted->
         if(granted)permissionRefresh++
@@ -151,7 +172,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
 
     LaunchedEffect(status, loadingBones) {
         if (status != null && !loadingBones) {
-            delay(2_500)
+            delay(2_000)
             status = null
         }
     }
@@ -300,9 +321,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
         if(nearBone!=null&&!currentProfile.walkingModeEnabled){
             if(currentProfile.vibrationEnabled) context.getSystemService(android.os.Vibrator::class.java)
                 ?.vibrate(android.os.VibrationEffect.createOneShot(350,android.os.VibrationEffect.DEFAULT_AMPLITUDE))
-            if(currentProfile.barkEnabled) android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION,75).also { tone->
-                tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2,220);delay(260);tone.release()
-            }
+            if(currentProfile.barkEnabled) DogBarkPlayer.play()
         }
     }
     LaunchedEffect(pendingPileReward?.claimId){
@@ -320,6 +339,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 piles = piles,
                 pois = mapPois.filter{poi->poi.hasGameShop||when(poi.poiType){"dog_park"->poiSettings.showDogParks;"pet_shop"->poiSettings.showPetShops;"veterinary"->poiSettings.showVets;else->poiSettings.showGrooming}},
                 nearbyPlayers = nearbyPlayers,
+                glints=collectionGlints,
                 playerMarkerId = currentProfile.activeMarkerId,
                 home = currentProfile.homeLat?.let{lat->currentProfile.homeLon?.let{lon->GeoPoint(lat,lon)}},
                 followPlayer = followPlayer,
@@ -342,8 +362,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 onPlayerTapped = { activePanel = GamePanel.PROFILE },
                 onEmptyMapTapped = { point -> if(adminMapMode) adminPlacement=point },
                 onHomeTapped = {
-                    status = if (atHome) "Du är hemma – automaten är tillgänglig." else "Ditt hem kan bara användas när du är inom 50 meter."
-                    if (atHome) activePanel = GamePanel.HOME
+                    homeInfoOpen=true
                 },
                 onPileTapped = onPileTapped@{ pile ->
                     val p = player
@@ -360,6 +379,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 onMenu = { menuOpen = true },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
+
+            if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=102.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
+                Text("OFFLINE • kartan kan visas, men spelåtgärder är låsta",Modifier.padding(horizontal=12.dp,vertical=7.dp),color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black,fontSize=12.sp)
+            }
 
             if(adminMapMode) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=104.dp).zIndex(5f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)) {
                 Row(Modifier.padding(horizontal=12.dp,vertical=7.dp),verticalAlignment=Alignment.CenterVertically){Text("ADMINLÄGE • tryck på kartan för att placera",color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black);TextButton(onClick={adminMapMode=false}){Text("AVSLUTA",color=androidx.compose.ui.graphics.Color.White)}}
@@ -385,7 +408,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
                             .widthIn(max=340.dp)
                             .fillMaxWidth(.88f)
                             .height(62.dp)
-                            .clickable(enabled = !collecting) {
+                            .clickable(enabled = !collecting&&isOnline) {
+                                if(adminMapMode){
+                                    status="Adminförhandsvisning: benet skulle ge ${boneValue(bone.type)} ben. Världen och ditt saldo ändrades inte."
+                                    return@clickable
+                                }
                                 collecting = true
                                 val p0 = player
                                 scope.launch {
@@ -397,6 +424,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                                 val ids=if (p0==null) emptySet() else bones.filter {
                                                     distanceMeters(p0.latitude,p0.longitude,it.latitude,it.longitude)<=25
                                                 }.mapTo(mutableSetOf()) { it.id }
+                                                collectionGlints=bones.filter{it.id in ids}.map{GeoPoint(it.latitude,it.longitude)}
                                                 bones=bones.filterNot { it.id in ids }
                                                 status=if (rewards.maxOfOrNull { it.rewardedPlayers } ?: 1>1)
                                                     "+$reward ben • flera spelare belönades" else "+$reward ben"
@@ -415,6 +443,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                         status=if (result.second>0) "+${result.second} ben" else "Någon hann ta benet före dig."
                                     }
                                     selectedBone = null
+                                    if(collectionGlints.isNotEmpty()){delay(520);collectionGlints=emptyList()}
                                     collecting = false
                                 }
                             },
@@ -422,7 +451,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     ) {
                         ActionButtonContent(
                             iconDrawable=R.drawable.bone_01,
-                            label=if (collecting) "SAMLAR…" else "TA BENET",
+                            label=if(adminMapMode)"TESTA BEN" else if (collecting) "SAMLAR…" else "TA BENET",
                             detail="+${boneValue(bone.type)} BEN  •  ${distance.toInt()} M"
                         )
                     }
@@ -434,18 +463,14 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 val pileOffset=if(nearBone!=null)92.dp else 22.dp
                 Box(Modifier.align(Alignment.BottomCenter).zIndex(2f).navigationBarsPadding().padding(bottom=pileOffset)
                     .widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp)
-                    .clickable(enabled=boneCount>=pile.cost&&!collecting){
-                        collecting=true;scope.launch{
-                            if(worldRepository!=null) runCatching{worldRepository.openPile(pile.id)}.fold(
-                                onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status="🐾 Gräver… snurran väljer ben"},
-                                onFailure={status=if(it.message?.contains("PILE_ALREADY_CLAIMED")==true)"En annan spelare hann före" else "Kunde inte gräva upp högen"})
-                            collecting=false;selectedPile=null
-                        }
-                    }) { ActionButtonContent(dirtDrawable(pile.type),if(boneCount>=pile.cost)"GRÄV UPP" else "BEHÖVER ${pile.cost} BEN","KOSTAR ${pile.cost} BEN") }
+                    .clickable(enabled=boneCount>=pile.cost&&!collecting&&isOnline){
+                        if(adminMapMode){status="Adminförhandsvisning: högen kostar ${pile.cost} ben. Inget förbrukades och högen ligger kvar.";return@clickable}
+                        pileToConfirm=pile
+                    }) { ActionButtonContent(dirtDrawable(pile.type),if(adminMapMode)"TESTA HÖG" else if(boneCount>=pile.cost)"GRÄV UPP" else "BEHÖVER ${pile.cost} BEN","KOSTAR ${pile.cost} BEN") }
             }
             nearShop?.let { shop ->
                 val index=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)
-                Box(Modifier.align(Alignment.BottomCenter).zIndex(2f).navigationBarsPadding().padding(bottom=(22+70*index).dp).widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp).clickable{activePanel=GamePanel.SHOP}) { ActionButtonContent(R.drawable.poi_pet_shop,"BESÖK BUTIK",shop.name?:"HUNDBUTIK") }
+                Box(Modifier.align(Alignment.BottomCenter).zIndex(2f).navigationBarsPadding().padding(bottom=(22+70*index).dp).widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp).clickable(enabled=isOnline){activePanel=GamePanel.SHOP}) { ActionButtonContent(R.drawable.poi_pet_shop,"BESÖK BUTIK",shop.name?:"HUNDBUTIK") }
             }
             if(atHome) {
                 val index=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)+(if(nearShop!=null)1 else 0)
@@ -455,6 +480,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 Surface(Modifier.align(Alignment.Center).padding(24.dp),color=androidx.compose.ui.graphics.Color(0xF21A2022),shape=RoundedCornerShape(8.dp)){
                     Column(Modifier.padding(22.dp),horizontalAlignment=Alignment.CenterHorizontally){Text("JORDFYND",color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=24.sp,fontWeight=FontWeight.Black);Text("🦴  🐾  🦴  🎾  🦴",fontSize=28.sp);LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical=12.dp));TextButton(onClick={status="Jordhögen gav +${reward.rewardValue} ben${if(reward.isDouble)" • DUBBELVINST!" else ""}";pendingPileReward=null}){Text("HOPPA ÖVER")}}
                 }
+            }
+            pileToConfirm?.let{pile->
+                AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text("Gräv upp jordhögen?")},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Image(painterResource(dirtDrawable(pile.type)),null,Modifier.size(82.dp).align(Alignment.CenterHorizontally));Text("Det kostar ${pile.cost} ben. Du får alltid minst samma värde tillbaka och snurran tar högst tre sekunder.")}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{if(worldRepository!=null)runCatching{worldRepository.openPile(pile.id)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status="🐾 Gräver… snurran väljer ben"},onFailure={status=if(it.message?.contains("PILE_ALREADY_CLAIMED")==true)"En annan spelare hann före – dina ben drogs inte." else "Kunde inte gräva upp högen"});collecting=false;selectedPile=null;pileToConfirm=null}}){Text("BETALA ${pile.cost} BEN")}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text("AVBRYT")}})
             }
             if (statusText != null) {
                 val actionCount=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)+(if(nearShop!=null)1 else 0)+(if(atHome)1 else 0)
@@ -519,7 +547,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 }==true }
                 GamePanelScreen(
                     panel=panel,profile=currentProfile.copy(boneCount=boneCount.toLong()),api=api,
-                    shopPoi=nearbyShop,poiSettings=poiSettings,onPoiSettings={poiSettings=it},onAdminMapMode={adminMapMode=true;activePanel=null},onClose={activePanel=null},
+                    shopPoi=nearbyShop,poiSettings=poiSettings,onPoiSettings={poiSettings=it},serverActionsEnabled=isOnline,onAdminMapMode={adminMapMode=true;activePanel=null},onNavigate={activePanel=it},onClose={activePanel=null},
                     onBalance={balance->boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=balance)},
                     onProfile={fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()}
                 )
@@ -529,11 +557,22 @@ internal fun GameScreen(profile:SessionBootstrap) {
             val distance=player?.let{distanceMeters(it.latitude,it.longitude,poi.latitude,poi.longitude).toInt()}
             AlertDialog(onDismissRequest={selectedPoi=null},title={Text(poi.name?:poiTypeName(poi.poiType))},text={Column(verticalArrangement=Arrangement.spacedBy(5.dp)){Text(poiTypeName(poi.poiType));poi.address?.let{Text(it)};poi.openingHours?.let{Text("Öppet: $it")};poi.phone?.let{Text("Telefon: $it")};poi.website?.let{Text(it,color=androidx.compose.ui.graphics.Color(0xFF5BC8C5))};Text("${distance?:0} m bort");if(poi.hasGameShop)Text("Här finns en spelbutik.",fontWeight=FontWeight.Bold)}},confirmButton={Button(onClick={val uri=Uri.parse("geo:${poi.latitude},${poi.longitude}?q=${poi.latitude},${poi.longitude}(${Uri.encode(poi.name?:"Hundplats")})");context.startActivity(Intent(Intent.ACTION_VIEW,uri));selectedPoi=null}){Text("VÄGBESKRIVNING")}},dismissButton={TextButton(onClick={selectedPoi=null}){Text("STÄNG")}})
         }
+        if(homeInfoOpen){
+            val homeDistance=player?.let{p->currentProfile.homeLat?.let{lat->currentProfile.homeLon?.let{lon->distanceMeters(p.latitude,p.longitude,lat,lon).toInt()}}}
+            val nextMove=currentProfile.homeChangedAt?.let{stamp->runCatching{java.time.Instant.parse(stamp).plus(java.time.Duration.ofHours(24)).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}.getOrNull()}
+            AlertDialog(onDismissRequest={homeInfoOpen=false},title={Text("Mitt hem")},text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Avstånd: ${homeDistance?.let{"$it m"}?:"okänt"}");Text(if(atHome)"Du är hemma och kan använda hemmaautomaten." else "Hemfunktionerna låses upp inom 50 meter.");nextMove?.let{Text("Hemmet kan flyttas igen: $it")}}},confirmButton={if(atHome)Button(onClick={homeInfoOpen=false;activePanel=GamePanel.HOME}){Text("BESÖK HEMMET")}else TextButton(onClick={homeInfoOpen=false}){Text("STÄNG")}})
+        }
         adminPlacement?.let { point ->
             var objectType by remember(point){mutableStateOf("bone")};var variant by remember(point){mutableStateOf("0")};var reason by remember(point){mutableStateOf("Manuell kartplacering")};var busy by remember(point){mutableStateOf(false)}
             AlertDialog(onDismissRequest={if(!busy)adminPlacement=null},title={Text("Placera spelobjekt")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("${"%.6f".format(point.latitude)}, ${"%.6f".format(point.longitude)}");Row{FilterChip(objectType=="bone",{objectType="bone"},label={Text("BEN")});Spacer(Modifier.width(8.dp));FilterChip(objectType=="pile",{objectType="pile"},label={Text("JORDHÖG")})};OutlinedTextField(variant,{variant=it.filter(Char::isDigit).take(2)},label={Text(if(objectType=="bone")"Bentyp 0–11" else "Högtyp 0–4")});OutlinedTextField(reason,{reason=it},label={Text("Orsak")})}},confirmButton={Button(enabled=!busy&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={busy=true;scope.launch{runCatching{gameApi?.adminPlaceObject(objectType,point.latitude,point.longitude,variant.toInt(),reason)}.onSuccess{status="Adminobjekt placerat";adminPlacement=null}.onFailure{status="Placeringen misslyckades: ${it.message.orEmpty()}";busy=false}}}){Text("PLACERA")}},dismissButton={TextButton(onClick={adminPlacement=null}){Text("AVBRYT")}})
         }
     }
+}
+
+private fun ConnectivityManager.isCurrentlyOnline():Boolean {
+    val network=activeNetwork?:return false
+    val caps=getNetworkCapabilities(network)?:return false
+    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)&&caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }
 
 @Composable
@@ -626,7 +665,7 @@ private fun dirtDrawable(type:Int)=intArrayOf(
 
 @Composable
 private fun GameMap(
-    player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, pois: List<MapPoi>, nearbyPlayers:List<NearbyPlayer>, playerMarkerId:String,home:GeoPoint?, followPlayer: Boolean,
+    player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, pois: List<MapPoi>, nearbyPlayers:List<NearbyPlayer>,glints:List<GeoPoint>, playerMarkerId:String,home:GeoPoint?, followPlayer: Boolean,
     onManualMove: () -> Unit, onBoundsChanged: (MapBounds) -> Unit, onBoneTapped: (Bone) -> Unit,
     onPlayerTapped: () -> Unit,onHomeTapped:()->Unit,onEmptyMapTapped:(GeoPoint)->Unit, onPileTapped: (DirtPile) -> Unit,onPoiTapped:(MapPoi)->Unit, modifier: Modifier
 ) {
@@ -705,6 +744,7 @@ private fun GameMap(
                             val poiIds=features.mapNotNull{it.properties()?.get("poiId")?.asString}.toSet()
                             val tappedPoi=latestPois.firstOrNull{it.poiId in poiIds}
                             if(tappedPoi!=null){latestPoiTap(tappedPoi);true}
+                            else if(libreMap.queryRenderedFeatures(hitArea,POI_CLUSTER_LAYER_ID).isNotEmpty()){libreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng,(libreMap.cameraPosition.zoom+2.0).coerceAtMost(15.0)),450);true}
                             else if(libreMap.queryRenderedFeatures(hitArea,HOME_LAYER_ID).isNotEmpty()){latestHomeTap();true}
                             else if (features.isNotEmpty()) { latestPlayerTap(); true } else {latestEmptyMapTap(GeoPoint(latLng.latitude,latLng.longitude));true}
                         }
@@ -767,6 +807,7 @@ private fun GameMap(
         val source = m.style?.getSourceAs<GeoJsonSource>(PILE_SOURCE_ID) ?: return@LaunchedEffect
         source.setGeoJson(pileFeatureCollection(piles))
     }
+    LaunchedEffect(map,styleReady,glints){map?.style?.getSourceAs<GeoJsonSource>(GLINT_SOURCE_ID)?.setGeoJson(FeatureCollection.fromFeatures(glints.map{Feature.fromGeometry(Point.fromLngLat(it.longitude,it.latitude))}))}
 
     LaunchedEffect(map,styleReady,nearbyPlayers) {
         val style=map?.style?:return@LaunchedEffect
@@ -794,6 +835,9 @@ private val FLOCK_DOT_LAYER_IDS=arrayOf("frasse-flock-dot-layer-1","frasse-flock
 private const val HOME_SOURCE_ID="frasse-home-source"
 private const val HOME_LAYER_ID="frasse-home-layer"
 private const val HOME_IMAGE_ID="frasse-home-image"
+private const val GLINT_SOURCE_ID="frasse-collection-glints"
+private const val GLINT_LAYER_ID="frasse-collection-glint-layer"
+private const val GLINT_IMAGE_ID="frasse-collection-glint-image"
 private const val BONE_SOURCE_ID = "frasse-bones-source"
 private const val PILE_SOURCE_ID = "frasse-piles-source"
 private const val PILE_ID_PROPERTY = "pileId"
@@ -804,6 +848,8 @@ private const val BONE_TYPE_PROPERTY = "boneType"
 private val BONE_IMAGE_IDS = Array(12) { index -> "frasse-bone-image-${index + 1}" }
 private val BONE_LAYER_IDS = Array(12) { index -> "frasse-bones-layer-${index + 1}" }
 private const val POI_SOURCE_ID = "frasse-pois-source"
+private const val POI_CLUSTER_LAYER_ID="frasse-poi-clusters"
+private const val POI_CLUSTER_COUNT_LAYER_ID="frasse-poi-cluster-count"
 private const val POI_TYPE_PROPERTY = "poiType"
 private val POI_TYPES = arrayOf("dog_park", "pet_shop", "veterinary", "grooming", "dog_wash")
 private val POI_IMAGE_IDS = arrayOf("frasse-poi-dog-park", "frasse-poi-pet-shop", "frasse-poi-veterinary", "frasse-poi-grooming", "frasse-poi-grooming")
@@ -812,6 +858,7 @@ private val POI_LAYER_IDS = POI_TYPES.map { "frasse-poi-$it-layer" }.toTypedArra
 private fun installGameLayers(style: Style, context: android.content.Context) {
     style.addImage(PLAYER_IMAGE_ID, defaultMarkerBitmap(context))
     style.addImage(HOME_IMAGE_ID,homeBitmap())
+    style.addImage(GLINT_IMAGE_ID,glintBitmap())
     intArrayOf(Color.rgb(22,141,138),Color.rgb(226,170,61),Color.rgb(80,145,220)).forEachIndexed{i,color->style.addImage(FLOCK_DOT_IMAGE_IDS[i],dotBitmap(color))}
 
     val boneDrawables = intArrayOf(
@@ -886,9 +933,22 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
     )}
     if(style.getSource(HOME_SOURCE_ID)==null)style.addSource(GeoJsonSource(HOME_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
     if(style.getLayer(HOME_LAYER_ID)==null)style.addLayerBelow(SymbolLayer(HOME_LAYER_ID,HOME_SOURCE_ID).withProperties(PropertyFactory.iconImage(HOME_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(.65f)),PLAYER_LAYER_ID)
+    if(style.getSource(GLINT_SOURCE_ID)==null)style.addSource(GeoJsonSource(GLINT_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
+    if(style.getLayer(GLINT_LAYER_ID)==null)style.addLayer(SymbolLayer(GLINT_LAYER_ID,GLINT_SOURCE_ID).withProperties(PropertyFactory.iconImage(GLINT_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(.8f)))
     if (style.getSource(POI_SOURCE_ID) == null) {
-        style.addSource(GeoJsonSource(POI_SOURCE_ID, FeatureCollection.fromFeatures(emptyArray<Feature>())))
+        style.addSource(GeoJsonSource(POI_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>()),GeoJsonOptions().withCluster(true).withClusterRadius(44).withClusterMaxZoom(13)))
     }
+    if(style.getLayer(POI_CLUSTER_LAYER_ID)==null)style.addLayerBelow(
+        CircleLayer(POI_CLUSTER_LAYER_ID,POI_SOURCE_ID)
+            .withFilter(Expression.has("point_count"))
+            .withProperties(PropertyFactory.circleColor(Color.rgb(226,170,61)),PropertyFactory.circleStrokeColor(Color.rgb(20,28,30)),PropertyFactory.circleStrokeWidth(3f),PropertyFactory.circleRadius(15f)),
+        BONE_LAYER_IDS.first()
+    )
+    if(style.getLayer(POI_CLUSTER_COUNT_LAYER_ID)==null)style.addLayer(
+        SymbolLayer(POI_CLUSTER_COUNT_LAYER_ID,POI_SOURCE_ID)
+            .withFilter(Expression.has("point_count"))
+            .withProperties(PropertyFactory.textField(Expression.toString(Expression.get("point_count"))),PropertyFactory.textColor(Color.rgb(20,28,30)),PropertyFactory.textSize(12f),PropertyFactory.textAllowOverlap(true))
+    )
     POI_LAYER_IDS.forEachIndexed { index, layerId ->
         if (style.getLayer(layerId) == null) {
             style.addLayerBelow(
@@ -964,6 +1024,13 @@ private fun pawBitmap(): Bitmap {
 private fun homeBitmap():Bitmap{
     val b=Bitmap.createBitmap(112,112,Bitmap.Config.ARGB_8888);val c=Canvas(b);val p=Paint(Paint.ANTI_ALIAS_FLAG)
     p.color=Color.rgb(20,27,30);c.drawCircle(56f,56f,50f,p);p.color=Color.rgb(226,170,61);val roof=android.graphics.Path();roof.moveTo(18f,54f);roof.lineTo(56f,20f);roof.lineTo(94f,54f);roof.close();c.drawPath(roof,p);p.color=Color.rgb(255,229,176);c.drawRect(27f,50f,85f,90f,p);p.color=Color.rgb(22,141,138);c.drawRect(49f,66f,65f,90f,p);return b
+}
+
+private fun glintBitmap():Bitmap{
+    val b=Bitmap.createBitmap(64,64,Bitmap.Config.ARGB_8888);val c=Canvas(b);val p=Paint(Paint.ANTI_ALIAS_FLAG)
+    p.color=Color.rgb(255,210,72);p.strokeWidth=5f
+    c.drawLine(32f,4f,32f,60f,p);c.drawLine(4f,32f,60f,32f,p);c.drawLine(13f,13f,51f,51f,p);c.drawLine(51f,13f,13f,51f,p)
+    p.color=Color.WHITE;c.drawCircle(32f,32f,7f,p);return b
 }
 
 private fun dotBitmap(color:Int):Bitmap{val b=Bitmap.createBitmap(24,24,Bitmap.Config.ARGB_8888);val c=Canvas(b);val p=Paint(Paint.ANTI_ALIAS_FLAG);p.color=Color.BLACK;c.drawCircle(12f,12f,11f,p);p.color=color;c.drawCircle(12f,12f,8f,p);return b}
