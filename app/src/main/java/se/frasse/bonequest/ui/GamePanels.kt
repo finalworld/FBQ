@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -60,7 +61,7 @@ private val PanelTeal=Color(0xFF168D8A)
             }
             Column(Modifier.weight(1f).fillMaxHeight().padding(18.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) { Text(profile.displayName,color=PanelGold,fontSize=27.sp,fontWeight=FontWeight.Black);Text("${profile.boneCount} ben",color=PanelCream) }
+                    Column(Modifier.weight(1f)) { Text(profile.displayName,color=PanelGold,fontSize=27.sp,fontWeight=FontWeight.Black);Text(stringResource(R.string.bone_balance_format,profile.boneCount),color=PanelCream) }
                     TextButton(onClick=onClose){Text(stringResource(R.string.ui_text_064))}
                 }
                 HorizontalDivider(color=PanelGold.copy(alpha=.6f));Spacer(Modifier.height(18.dp))
@@ -138,7 +139,7 @@ private fun panelTitle(p:GamePanel)=when(p){
             val count=rows.firstOrNull{it.boneType==type}?.lifetimeCount?:0
             Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(5.dp)).padding(10.dp),verticalAlignment=Alignment.CenterVertically){
                 Image(painterResource(boneDrawable(type)),null,Modifier.size(58.dp),contentScale=ContentScale.Fit,colorFilter=if(count>0)null else ColorFilter.tint(Color(0xFF5D6263)))
-                Column(Modifier.weight(1f).padding(start=10.dp)){Text(if(count>0) BONE_NAMES[type] else "Okänt ben",color=PanelCream,fontWeight=FontWeight.Bold);Text("Värde ${BONE_VALUES[type]}",color=PanelGold)}
+                Column(Modifier.weight(1f).padding(start=10.dp)){Text(if(count>0) BONE_NAMES[type] else stringResource(R.string.collection_unknown_bone),color=PanelCream,fontWeight=FontWeight.Bold);Text(stringResource(R.string.collection_value,BONE_VALUES[type]),color=PanelGold)}
                 Text(if(count>0) count.toString() else "?",fontSize=22.sp,color=PanelCream,fontWeight=FontWeight.Black)
             }
         }
@@ -150,7 +151,8 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
     val scope=rememberCoroutineScope();var items by remember{mutableStateOf<List<ShopItem>>(emptyList())};var busy by remember{mutableStateOf(false)}
     fun reload(){scope.launch{items=runCatching{api.catalog()}.getOrDefault(emptyList()).filter{it.owned}}}
     LaunchedEffect(Unit){reload()}
-    LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){items(items){item->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A)).clickable(enabled=!busy&&!item.equipped){busy=true;scope.launch{runCatching{api.equip(item.itemId)};onProfile(api.bootstrap());reload();busy=false}}.padding(13.dp)){Text(item.nameSv,Modifier.weight(1f),color=PanelCream);Text(if(item.equipped)"UTRUSTAD" else "VÄLJ",color=if(item.equipped)PanelTeal else PanelGold,fontWeight=FontWeight.Bold)}}}
+    val context=LocalContext.current
+    LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){items(items){item->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A)).clickable(enabled=!busy&&!item.equipped){busy=true;scope.launch{runCatching{api.equip(item.itemId)};onProfile(api.bootstrap());reload();busy=false}}.padding(13.dp),verticalAlignment=Alignment.CenterVertically){Image(markerBitmap(context,item.assetName).asImageBitmap(),null,Modifier.size(46.dp));Text(item.nameSv,Modifier.weight(1f).padding(start=10.dp),color=PanelCream);Text(stringResource(if(item.equipped)R.string.equipment_equipped else R.string.equipment_select),color=if(item.equipped)PanelTeal else PanelGold,fontWeight=FontWeight.Bold)}}}
 }
 
 @Composable private fun LegacyHomePanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit) {
@@ -166,27 +168,27 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 }
 
 @Composable private fun HomePanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit){
-    val scope=rememberCoroutineScope();var message by remember{mutableStateOf("Automaten kan användas inom 50 meter från hemmet.")};var pending by remember{mutableStateOf<SlotResult?>(null)};var revealed by remember{mutableStateOf(true)};var error by remember{mutableStateOf(false)}
-    fun reveal(){pending?.let{r->message=if(r.payout==0)"Ingen vinst den här gången." else "Vinst! ${r.payout} ben (${r.multiplier}×)";onBalance(r.balance)};revealed=true;pending=null}
+    val context=LocalContext.current;val scope=rememberCoroutineScope();var message by remember{mutableStateOf(context.getString(R.string.home_slot_intro))};var pending by remember{mutableStateOf<SlotResult?>(null)};var revealed by remember{mutableStateOf(true)};var error by remember{mutableStateOf(false)}
+    fun reveal(){pending?.let{r->message=if(r.payout==0)context.getString(R.string.slot_loss) else context.getString(R.string.slot_win,r.payout,r.multiplier.toString());onBalance(r.balance)};revealed=true;pending=null}
     LaunchedEffect(pending?.spinId){if(pending!=null){delay(5000);reveal()}}
     Column(verticalArrangement=Arrangement.spacedBy(13.dp)){
-        Text(if(profile.homeLat==null)"Du har inte valt hem ännu." else "Ditt hem är sparat och syns med en husikon på kartan.",color=PanelCream,fontSize=18.sp)
-        Button(enabled=pending==null,onClick={scope.launch{runCatching{api.setHome()}.onSuccess{message="Hemmet sparades. Nästa flytt är möjlig om 24 timmar.";onProfile(api.bootstrap())}.onFailure{message="Hemmet kunde inte flyttas. Kontrollera GPS och cooldown."}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_068))}
+        Text(stringResource(if(profile.homeLat==null)R.string.home_not_set else R.string.home_saved_map),color=PanelCream,fontSize=18.sp)
+        Button(enabled=pending==null,onClick={scope.launch{runCatching{api.setHome()}.onSuccess{message=context.getString(R.string.home_saved_cooldown);onProfile(api.bootstrap())}.onFailure{message=context.getString(R.string.home_move_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_068))}
         HorizontalDivider();Text(stringResource(R.string.ui_text_020),color=PanelGold,fontWeight=FontWeight.Black,fontSize=20.sp);Text(message,color=if(error)Color(0xFFFF6B5D) else PanelCream)
-        if(pending==null)Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){listOf(1,2,5,10).forEach{stake->Button(onClick={scope.launch{error=false;runCatching{api.spinHome(stake)}.onSuccess{pending=it;revealed=false;message="🐾 Automaten snurrar…"}.onFailure{error=true;message="Automaten kräver att du är hemma, har bra GPS och tillräckligt med ben."}}}){Text("$stake")}}}
+        if(pending==null)Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){listOf(1,2,5,10).forEach{stake->Button(onClick={scope.launch{error=false;runCatching{api.spinHome(stake)}.onSuccess{pending=it;revealed=false;message=context.getString(R.string.slot_spinning)}.onFailure{error=true;message=context.getString(R.string.slot_unavailable)}}}){Text(stake.toString())}}}
         else Column(horizontalAlignment=Alignment.CenterHorizontally){LinearProgressIndicator(Modifier.fillMaxWidth(),color=PanelGold);Spacer(Modifier.height(12.dp));Text(stringResource(R.string.ui_text_090),fontSize=27.sp);TextButton(onClick={reveal()}){Text(stringResource(R.string.ui_text_030))}}
     }
 }
 
 @Composable private fun ShopPanel(profile:SessionBootstrap,api:GameApiRepository,poi:MapPoi?,onBalance:(Long)->Unit) {
-    val scope=rememberCoroutineScope();var catalog by remember{mutableStateOf<List<ShopItem>>(emptyList())};var category by remember{mutableStateOf<String?>(null)};var message by remember{mutableStateOf<String?>(null)};var pendingPurchase by remember{mutableStateOf<ShopItem?>(null)}
+    val context=LocalContext.current;val scope=rememberCoroutineScope();var catalog by remember{mutableStateOf<List<ShopItem>>(emptyList())};var category by remember{mutableStateOf<String?>(null)};var message by remember{mutableStateOf<String?>(null)};var pendingPurchase by remember{mutableStateOf<ShopItem?>(null)}
     fun reload(){scope.launch{catalog=runCatching{api.catalog()}.getOrDefault(emptyList());if(category==null)category=catalog.firstOrNull()?.subcategory}}
     LaunchedEffect(Unit){reload()}
     Row(Modifier.fillMaxSize()){
         LazyColumn(Modifier.width(112.dp).fillMaxHeight().background(Color(0xFF111719))){catalog.groupBy{it.mainCategory}.forEach{(main,entries)->item{Text(main.uppercase(),Modifier.padding(horizontal=9.dp,vertical=10.dp),color=PanelGold,fontWeight=FontWeight.Black,fontSize=11.sp)};items(entries.map{it.subcategory}.distinct()){cat->Text(cat,Modifier.fillMaxWidth().clickable{category=cat}.padding(horizontal=10.dp,vertical=8.dp),color=if(category==cat)PanelGold else PanelCream,fontSize=11.sp)}}}
-        Column(Modifier.weight(1f).padding(start=10.dp)){message?.let{Text(it,color=PanelGold)};LazyVerticalGrid(columns=GridCells.Adaptive(118.dp),modifier=Modifier.fillMaxSize(),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){gridItems(catalog.filter{it.subcategory==category}){item->Column(Modifier.fillMaxWidth().background(if(item.owned)Color.DarkGray else Color(0xFF20282A),RoundedCornerShape(5.dp)).padding(9.dp),horizontalAlignment=Alignment.CenterHorizontally){Box(Modifier.size(52.dp).background(rarityColor(item.rarity),RoundedCornerShape(26.dp)),contentAlignment=Alignment.Center){Text(markerGlyph(item.assetName),fontSize=28.sp)};Text(item.nameSv,color=PanelCream,fontWeight=FontWeight.Bold,textAlign=TextAlign.Center,fontSize=12.sp);Text("${item.rarity}\n${item.price} ben",color=if(item.price>profile.boneCount)Color(0xFFFF6961) else PanelGold,textAlign=TextAlign.Center,fontSize=11.sp);Button(enabled=!item.owned&&item.price<=profile.boneCount&&poi!=null,onClick={pendingPurchase=item}){Text(if(item.owned)"ÄGS" else "KÖP")}}}}}
+        Column(Modifier.weight(1f).padding(start=10.dp)){message?.let{Text(it,color=PanelGold)};LazyVerticalGrid(columns=GridCells.Adaptive(118.dp),modifier=Modifier.fillMaxSize(),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){gridItems(catalog.filter{it.subcategory==category}){item->Column(Modifier.fillMaxWidth().background(if(item.owned)Color.DarkGray else Color(0xFF20282A),RoundedCornerShape(5.dp)).padding(9.dp),horizontalAlignment=Alignment.CenterHorizontally){Image(markerBitmap(context,item.assetName).asImageBitmap(),null,Modifier.size(58.dp));Text(item.nameSv,color=PanelCream,fontWeight=FontWeight.Bold,textAlign=TextAlign.Center,fontSize=12.sp);Text(stringResource(R.string.shop_item_price,item.rarity,item.price),color=if(item.price>profile.boneCount)Color(0xFFFF6961) else PanelGold,textAlign=TextAlign.Center,fontSize=11.sp);Button(enabled=!item.owned&&item.price<=profile.boneCount&&poi!=null,onClick={pendingPurchase=item}){Text(stringResource(if(item.owned)R.string.shop_owned else R.string.shop_buy))}}}}}
     }
-    pendingPurchase?.let{item->AlertDialog(onDismissRequest={pendingPurchase=null},title={Text("Köp ${item.nameSv}?")},text={Text("Det kostar ${item.price} ben. Föremålet utrustas senare under Min utrustning.")},confirmButton={Button(onClick={pendingPurchase=null;scope.launch{runCatching{api.buy(poi!!.poiId,item.itemId)}.onSuccess{onBalance(it.balance);message="${item.nameSv} köpt!";reload()}.onFailure{message="Köpet misslyckades. Du måste vara vid butiken."}}}){Text(stringResource(R.string.ui_text_035))}},dismissButton={TextButton(onClick={pendingPurchase=null}){Text(stringResource(R.string.ui_text_006))}})}
+    pendingPurchase?.let{item->AlertDialog(onDismissRequest={pendingPurchase=null},title={Text(stringResource(R.string.shop_confirm_title,item.nameSv))},text={Text(stringResource(R.string.shop_confirm_body,item.price))},confirmButton={Button(onClick={pendingPurchase=null;scope.launch{runCatching{api.buy(poi!!.poiId,item.itemId)}.onSuccess{onBalance(it.balance);message=context.getString(R.string.shop_purchase_success,item.nameSv);reload()}.onFailure{message=context.getString(R.string.shop_purchase_failed)}}}){Text(stringResource(R.string.ui_text_035))}},dismissButton={TextButton(onClick={pendingPurchase=null}){Text(stringResource(R.string.ui_text_006))}})}
 }
 private fun markerGlyph(asset:String)=when{asset.contains("breed")->"🐶";asset.contains("toy")->"🎾";asset.contains("tag")->"🏷";asset.contains("gear")->"🦮";else->"🐾"}
 private fun rarityColor(rarity:String)=when(rarity){"mythic"->Color(0xFFE2AA3D);"legendary"->Color(0xFF8D54C7);"epic"->Color(0xFF316DC1);"rare"->Color(0xFF168D8A);else->Color(0xFF3C4547)}
@@ -194,18 +196,18 @@ private fun rarityColor(rarity:String)=when(rarity){"mythic"->Color(0xFFE2AA3D);
 @Composable private fun SettingsPanel(profile:SessionBootstrap,api:GameApiRepository,initialPoiSettings:PoiSettings,onPoiSettings:(PoiSettings)->Unit,onProfile:(SessionBootstrap)->Unit) {
     val context=LocalContext.current;val scope=rememberCoroutineScope();var walking by remember{mutableStateOf(profile.walkingModeEnabled)};var bark by remember{mutableStateOf(profile.barkEnabled)};var vibration by remember{mutableStateOf(profile.vibrationEnabled)};var poiSettings by remember(initialPoiSettings){mutableStateOf(initialPoiSettings)};var saved by remember{mutableStateOf<String?>(null)};var deleting by remember{mutableStateOf(false)};var confirmation by remember{mutableStateOf("")}
     Column(verticalArrangement=Arrangement.spacedBy(13.dp)){
-        SettingToggle("Promenadläge","Fortsätter mäta och varnar för ben när skärmen är släckt.",walking){walking=it}
-        SettingToggle("Hundskall","Spela ett vänligt voff nära ben.",bark){bark=it}
-        SettingToggle("Vibration","Vibrera en gång när du kommer nära ben.",vibration){vibration=it}
+        SettingToggle(stringResource(R.string.settings_walking_title),stringResource(R.string.settings_walking_help),walking){walking=it}
+        SettingToggle(stringResource(R.string.settings_bark_title),stringResource(R.string.settings_bark_help),bark){bark=it}
+        SettingToggle(stringResource(R.string.settings_vibration_title),stringResource(R.string.settings_vibration_help),vibration){vibration=it}
         HorizontalDivider(color=PanelGold.copy(alpha=.35f));Text(stringResource(R.string.ui_text_034),color=PanelGold,fontWeight=FontWeight.Black)
-        SettingToggle("Hundrastgårdar","Visa hundrastgårdar på kartan.",poiSettings.showDogParks){poiSettings=poiSettings.copy(showDogParks=it)}
-        SettingToggle("Djuraffärer","Visa butiker med djur- och hundsaker.",poiSettings.showPetShops){poiSettings=poiSettings.copy(showPetShops=it)}
-        SettingToggle("Veterinärer","Visa veterinärer och djursjukhus.",poiSettings.showVets){poiSettings=poiSettings.copy(showVets=it)}
-        SettingToggle("Hundservice","Visa trim, hunddagis och liknande.",poiSettings.showGrooming){poiSettings=poiSettings.copy(showGrooming=it)}
-        Button(onClick={scope.launch{runCatching{api.updateSettings(walking,bark,vibration);api.updatePoiSettings(poiSettings)}.onSuccess{WalkingPreferences(context).apply{setEnabled(walking);setBarkEnabled(bark);setVibrationEnabled(vibration)};if(walking)WalkingServiceController.start(context) else WalkingServiceController.stop(context);onPoiSettings(poiSettings);onProfile(api.bootstrap());saved="Inställningarna är sparade."}.onFailure{saved="Kunde inte spara inställningarna."}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_062))}
+        SettingToggle(stringResource(R.string.settings_dog_parks),stringResource(R.string.settings_dog_parks_help),poiSettings.showDogParks){poiSettings=poiSettings.copy(showDogParks=it)}
+        SettingToggle(stringResource(R.string.settings_pet_shops),stringResource(R.string.settings_pet_shops_help),poiSettings.showPetShops){poiSettings=poiSettings.copy(showPetShops=it)}
+        SettingToggle(stringResource(R.string.settings_vets),stringResource(R.string.settings_vets_help),poiSettings.showVets){poiSettings=poiSettings.copy(showVets=it)}
+        SettingToggle(stringResource(R.string.settings_services),stringResource(R.string.settings_services_help),poiSettings.showGrooming){poiSettings=poiSettings.copy(showGrooming=it)}
+        Button(onClick={scope.launch{runCatching{api.updateSettings(walking,bark,vibration);api.updatePoiSettings(poiSettings)}.onSuccess{WalkingPreferences(context).apply{setEnabled(walking);setBarkEnabled(bark);setVibrationEnabled(vibration)};if(walking)WalkingServiceController.start(context) else WalkingServiceController.stop(context);onPoiSettings(poiSettings);onProfile(api.bootstrap());saved=context.getString(R.string.settings_saved)}.onFailure{saved=context.getString(R.string.settings_save_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_062))}
         saved?.let{Text(it,color=PanelGold)};Spacer(Modifier.weight(1f));OutlinedButton(onClick={scope.launch{api.signOut()}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_036))};TextButton(onClick={deleting=true},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_058),color=Color(0xFFFF6B5D))}
     }
-    if(deleting) AlertDialog(onDismissRequest={deleting=false},title={Text(stringResource(R.string.ui_text_059))},text={Column{Text(stringResource(R.string.ui_text_022));OutlinedTextField(confirmation,{confirmation=it},Modifier.fillMaxWidth())}},confirmButton={Button(enabled=confirmation==profile.displayName,onClick={scope.launch{runCatching{api.deleteAccount(confirmation)}.onSuccess{api.signOut()}.onFailure{saved="Kontot kunde inte raderas. Kontrollera flockledarskap och namnet."};deleting=false}}){Text(stringResource(R.string.ui_text_057))}},dismissButton={TextButton(onClick={deleting=false}){Text(stringResource(R.string.ui_text_006))}})
+    if(deleting) AlertDialog(onDismissRequest={deleting=false},title={Text(stringResource(R.string.ui_text_059))},text={Column{Text(stringResource(R.string.ui_text_022));OutlinedTextField(confirmation,{confirmation=it},Modifier.fillMaxWidth())}},confirmButton={Button(enabled=confirmation==profile.displayName,onClick={scope.launch{runCatching{api.deleteAccount(confirmation)}.onSuccess{api.signOut()}.onFailure{saved=context.getString(R.string.account_delete_failed)};deleting=false}}){Text(stringResource(R.string.ui_text_057))}},dismissButton={TextButton(onClick={deleting=false}){Text(stringResource(R.string.ui_text_006))}})
 }
 @Composable private fun SettingToggle(title:String,help:String,value:Boolean,onChange:(Boolean)->Unit){Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(title,color=PanelCream,fontWeight=FontWeight.Bold);Text(help,color=PanelCream.copy(alpha=.65f),fontSize=12.sp)};Switch(value,onChange)}}
 

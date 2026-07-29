@@ -120,6 +120,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var selectedPile by remember { mutableStateOf<DirtPile?>(null) }
     var pileToConfirm by remember { mutableStateOf<DirtPile?>(null) }
     var selectedPoi by remember { mutableStateOf<MapPoi?>(null) }
+    var insideForegroundBoneZone by remember { mutableStateOf(false) }
     var homeInfoOpen by remember { mutableStateOf(false) }
     var pendingPileReward by remember { mutableStateOf<PileResult?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -234,7 +235,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 ))?.let { segment ->
                     SupabaseProvider.clientOrNull?.let { client -> scope.launch {
                         val now=System.currentTimeMillis()
-                        val batch=se.frasse.bonequest.walking.DistanceBatch(meters=segment.meters.toInt().coerceAtLeast(1),startedAtEpochMillis=now-1_000,endedAtEpochMillis=now)
+                        val measuredDuration=(segment.to.elapsedRealtimeMillis-segment.from.elapsedRealtimeMillis).coerceIn(1_000,120_000)
+                        val batch=se.frasse.bonequest.walking.DistanceBatch(meters=segment.meters.toInt().coerceAtLeast(1),startedAtEpochMillis=now-measuredDuration,endedAtEpochMillis=now)
                         val sync=se.frasse.bonequest.walking.DistanceSyncRepository(client)
                         runCatching { sync.sync(batch) }
                             .onSuccess { currentProfile=currentProfile.copy(totalMeters=currentProfile.totalMeters+segment.meters.toLong());foregroundDistanceQueue.load().forEach{queued->if(runCatching{sync.sync(queued)}.isSuccess)foregroundDistanceQueue.remove(queued.id)} }
@@ -336,8 +338,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
         p!=null&&lat!=null&&lon!=null&&distanceMeters(p.latitude,p.longitude,lat,lon)<=50.0
     }
     LaunchedEffect(nearBone) { selectedBone = nearBone }
-    LaunchedEffect(nearBone?.id) {
-        if(nearBone!=null&&!currentProfile.walkingModeEnabled){
+    LaunchedEffect(nearBone!=null,currentProfile.walkingModeEnabled,currentProfile.barkEnabled,currentProfile.vibrationEnabled) {
+        if(nearBone==null){insideForegroundBoneZone=false;return@LaunchedEffect}
+        if(!insideForegroundBoneZone&&!currentProfile.walkingModeEnabled){
+            insideForegroundBoneZone=true
             if(currentProfile.vibrationEnabled) context.getSystemService(android.os.Vibrator::class.java)
                 ?.vibrate(android.os.VibrationEffect.createOneShot(350,android.os.VibrationEffect.DEFAULT_AMPLITUDE))
             if(currentProfile.barkEnabled) DogBarkPlayer.play()
@@ -346,7 +350,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     LaunchedEffect(pendingPileReward?.claimId){
         val reward=pendingPileReward?:return@LaunchedEffect
         delay(3000)
-        status="Jordhögen gav +${reward.rewardValue} ben${if(reward.isDouble)" • DUBBELVINST!" else ""}"
+        status=context.getString(R.string.pile_reward_status,reward.rewardValue,if(reward.isDouble)context.getString(R.string.double_win_suffix) else "")
         pendingPileReward=null
     }
 
@@ -376,7 +380,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     val distance = player?.let { p ->
                         distanceMeters(p.latitude, p.longitude, bone.latitude, bone.longitude).toInt()
                     }
-                    status = "${BONE_NAMES[bone.type.coerceIn(BONE_NAMES.indices)].uppercase()}  •  VÄRDE ${boneValue(bone.type)}  •  ${distance?.let { "$it M" } ?: "OKÄNT AVSTÅND"}"
+                    status = context.getString(R.string.bone_tap_info,BONE_NAMES[bone.type.coerceIn(BONE_NAMES.indices)].uppercase(),boneValue(bone.type),distance?.let { context.getString(R.string.distance_meters_short,it) } ?: context.getString(R.string.unknown_distance))
                 },
                 onPlayerTapped = { activePanel = GamePanel.PROFILE },
                 onEmptyMapTapped = { point -> if(adminMapMode) adminPlacement=point },
@@ -387,7 +391,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     val p = player
                     val d = if (p == null) 9999.0 else distanceMeters(p.latitude,p.longitude,pile.latitude,pile.longitude)
                     selectedPile=pile
-                    status="Jordhög • kostar ${pile.cost} ben • ${d.toInt()} m"
+                    status=context.getString(R.string.pile_map_info,pile.cost,d.toInt())
                 },
                 onPoiTapped={selectedPoi=it},
                 modifier = Modifier.fillMaxSize()
@@ -429,7 +433,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                             .height(62.dp)
                             .clickable(enabled = !collecting&&isOnline) {
                                 if(adminMapMode){
-                                    status="Adminförhandsvisning: benet skulle ge ${boneValue(bone.type)} ben. Världen och ditt saldo ändrades inte."
+                                    status=context.getString(R.string.admin_bone_preview,boneValue(bone.type))
                                     return@clickable
                                 }
                                 collecting = true
@@ -446,12 +450,12 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                                 collectionGlints=bones.filter{it.id in ids}.map{GeoPoint(it.latitude,it.longitude)}
                                                 bones=bones.filterNot { it.id in ids }
                                                 status=if (rewards.maxOfOrNull { it.rewardedPlayers } ?: 1>1)
-                                                    "+$reward ben • flera spelare belönades" else "+$reward ben"
+                                                    context.getString(R.string.collect_group_reward,reward) else context.getString(R.string.collect_reward,reward)
                                             },onFailure = { error ->
                                                 status = when {
-                                                    error.message?.contains("NO_BONES_IN_RANGE")==true -> "Någon hann ta benet före dig."
-                                                    error.message?.contains("ACCURATE_LOCATION_REQUIRED")==true -> "GPS-signalen är inte tillräckligt exakt ännu."
-                                                    else -> "Kunde inte ta benet: ${error.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"
+                                                    error.message?.contains("NO_BONES_IN_RANGE")==true -> context.getString(R.string.bone_taken_first)
+                                                    error.message?.contains("ACCURATE_LOCATION_REQUIRED")==true -> context.getString(R.string.bone_gps_inaccurate)
+                                                    else -> context.getString(R.string.bone_collect_failed,error.message.orEmpty().lineSequence().firstOrNull().orEmpty())
                                                 }
                                             }
                                         )
@@ -459,7 +463,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                         val inRange = if (p0 == null) emptyList() else bones.filter { distanceMeters(p0.latitude,p0.longitude,it.latitude,it.longitude) <= 25.0 }
                                         val result = repository.collectBones(inRange.map { it.id })
                                         delay(450); bones=result.first; boneCount=repository.boneCount()
-                                        status=if (result.second>0) "+${result.second} ben" else "Någon hann ta benet före dig."
+                                        status=if (result.second>0) context.getString(R.string.collect_reward,result.second) else context.getString(R.string.bone_taken_first)
                                     }
                                     selectedBone = null
                                     if(collectionGlints.isNotEmpty()){delay(520);collectionGlints=emptyList()}
@@ -470,38 +474,38 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     ) {
                         ActionButtonContent(
                             iconDrawable=R.drawable.bone_01,
-                            label=if(adminMapMode)"TESTA BEN" else if (collecting) "SAMLAR…" else "TA BENET",
-                            detail="+${boneValue(bone.type)} BEN  •  ${distance.toInt()} M"
+                            label=stringResource(if(adminMapMode)R.string.action_test_bone else if(collecting)R.string.action_collecting else R.string.action_take_bone),
+                            detail=stringResource(R.string.action_bone_detail,boneValue(bone.type),distance.toInt())
                         )
                     }
                 }
             }
 
-            val statusText = if (loadingBones) "Letar gångstigar…" else status
+            val statusText = if (loadingBones) stringResource(R.string.searching_walkable_paths) else status
             nearPile?.let { pile ->
                 val pileOffset=if(nearBone!=null)92.dp else 22.dp
                 Box(Modifier.align(Alignment.BottomCenter).zIndex(2f).navigationBarsPadding().padding(bottom=pileOffset)
                     .widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp)
                     .clickable(enabled=boneCount>=pile.cost&&!collecting&&isOnline){
-                        if(adminMapMode){status="Adminförhandsvisning: högen kostar ${pile.cost} ben. Inget förbrukades och högen ligger kvar.";return@clickable}
+                        if(adminMapMode){status=context.getString(R.string.admin_pile_preview,pile.cost);return@clickable}
                         pileToConfirm=pile
-                    }) { ActionButtonContent(dirtDrawable(pile.type),if(adminMapMode)"TESTA HÖG" else if(boneCount>=pile.cost)"GRÄV UPP" else "BEHÖVER ${pile.cost} BEN","KOSTAR ${pile.cost} BEN") }
+                    }) { ActionButtonContent(dirtDrawable(pile.type),if(adminMapMode)stringResource(R.string.action_test_pile) else if(boneCount>=pile.cost)stringResource(R.string.action_dig_pile) else stringResource(R.string.action_need_bones,pile.cost),stringResource(R.string.action_cost_bones,pile.cost)) }
             }
             nearShop?.let { shop ->
                 val index=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)
-                Box(Modifier.align(Alignment.BottomCenter).zIndex(2f).navigationBarsPadding().padding(bottom=(22+70*index).dp).widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp).clickable(enabled=isOnline){activePanel=GamePanel.SHOP}) { ActionButtonContent(R.drawable.poi_pet_shop,"BESÖK BUTIK",shop.name?:"HUNDBUTIK") }
+                Box(Modifier.align(Alignment.BottomCenter).zIndex(2f).navigationBarsPadding().padding(bottom=(22+70*index).dp).widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp).clickable(enabled=isOnline){activePanel=GamePanel.SHOP}) { ActionButtonContent(R.drawable.poi_pet_shop,stringResource(R.string.action_visit_shop),shop.name?:stringResource(R.string.action_dog_shop_fallback)) }
             }
             if(atHome) {
                 val index=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)+(if(nearShop!=null)1 else 0)
-                Box(Modifier.align(Alignment.BottomCenter).zIndex(2f).navigationBarsPadding().padding(bottom=(22+70*index).dp).widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp).clickable{activePanel=GamePanel.HOME}) { ActionButtonContent(R.drawable.marker_default_paw,"BESÖK HEMMET","FRASSES HEMMAAUTOMAT") }
+                Box(Modifier.align(Alignment.BottomCenter).zIndex(2f).navigationBarsPadding().padding(bottom=(22+70*index).dp).widthIn(max=340.dp).fillMaxWidth(.88f).height(62.dp).clickable{activePanel=GamePanel.HOME}) { ActionButtonContent(R.drawable.marker_default_paw,stringResource(R.string.action_visit_home),stringResource(R.string.action_home_slot)) }
             }
             pendingPileReward?.let { reward->
                 Surface(Modifier.align(Alignment.Center).padding(24.dp),color=androidx.compose.ui.graphics.Color(0xF21A2022),shape=RoundedCornerShape(8.dp)){
-                    Column(Modifier.padding(22.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(stringResource(R.string.ui_text_032),color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=24.sp,fontWeight=FontWeight.Black);Text(stringResource(R.string.ui_text_091),fontSize=28.sp);LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical=12.dp));TextButton(onClick={status="Jordhögen gav +${reward.rewardValue} ben${if(reward.isDouble)" • DUBBELVINST!" else ""}";pendingPileReward=null}){Text(stringResource(R.string.ui_text_030))}}
+                    Column(Modifier.padding(22.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(stringResource(R.string.ui_text_032),color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=24.sp,fontWeight=FontWeight.Black);Text(stringResource(R.string.ui_text_091),fontSize=28.sp);LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical=12.dp));TextButton(onClick={status=context.getString(R.string.pile_reward_status,reward.rewardValue,if(reward.isDouble)context.getString(R.string.double_win_suffix) else "");pendingPileReward=null}){Text(stringResource(R.string.ui_text_030))}}
                 }
             }
             pileToConfirm?.let{pile->
-                AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text(stringResource(R.string.ui_text_027))},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Image(painterResource(dirtDrawable(pile.type)),null,Modifier.size(82.dp).align(Alignment.CenterHorizontally));Text("Det kostar ${pile.cost} ben. Du får alltid minst samma värde tillbaka och snurran tar högst tre sekunder.")}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{if(worldRepository!=null)runCatching{worldRepository.openPile(pile.id)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status="🐾 Gräver… snurran väljer ben"},onFailure={status=if(it.message?.contains("PILE_ALREADY_CLAIMED")==true)"En annan spelare hann före – dina ben drogs inte." else "Kunde inte gräva upp högen"});collecting=false;selectedPile=null;pileToConfirm=null}}){Text("BETALA ${pile.cost} BEN")}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text(stringResource(R.string.ui_text_006))}})
+                AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text(stringResource(R.string.ui_text_027))},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Image(painterResource(dirtDrawable(pile.type)),null,Modifier.size(82.dp).align(Alignment.CenterHorizontally));Text(stringResource(R.string.pile_confirm_body,pile.cost))}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{if(worldRepository!=null)runCatching{worldRepository.openPile(pile.id)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status=context.getString(R.string.pile_spinning)},onFailure={status=if(it.message?.contains("PILE_ALREADY_CLAIMED")==true)context.getString(R.string.pile_claimed_first) else context.getString(R.string.pile_open_failed)});collecting=false;selectedPile=null;pileToConfirm=null}}){Text(stringResource(R.string.pile_pay_button,pile.cost))}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text(stringResource(R.string.ui_text_006))}})
             }
             if (statusText != null) {
                 val actionCount=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)+(if(nearShop!=null)1 else 0)+(if(atHome)1 else 0)
@@ -526,10 +530,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
             val st = repository.stats()
             AlertDialog(onDismissRequest={profileOpen=false}, title={Text(st.displayName)}, text={
                 Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                    Text("Gått: ${"%.2f".format(st.totalKm)} km")
-                    Text("Samlade ben: ${st.totalBonesCollected}")
-                    Text("Öppnade jordhögar: ${st.totalDirtPilesOpened}")
-                    Text("Medlem sedan: ${java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date(st.memberSince))}")
+                    Text(stringResource(R.string.profile_walked,"%.2f".format(st.totalKm)))
+                    Text(stringResource(R.string.profile_collected_bones,st.totalBonesCollected))
+                    Text(stringResource(R.string.profile_opened_piles,st.totalDirtPilesOpened))
+                    Text(stringResource(R.string.profile_member_since,java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date(st.memberSince))))
                 }
             }, confirmButton={TextButton(onClick={profileOpen=false}){Text(stringResource(R.string.ui_text_064))}})
         }
@@ -543,7 +547,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                         Text(stringResource(R.string.ui_text_079))
                         Button(onClick = { menuOpen=false; profileOpen=true }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.ui_text_040)) }
                         Text(stringResource(R.string.ui_text_066), fontSize = 13.sp)
-                        Text("Samlade ben: $boneCount", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.profile_collected_bones,boneCount), fontWeight = FontWeight.Bold)
                     }
                 },
                 confirmButton = {
@@ -574,16 +578,16 @@ internal fun GameScreen(profile:SessionBootstrap) {
         }
         selectedPoi?.let { poi ->
             val distance=player?.let{distanceMeters(it.latitude,it.longitude,poi.latitude,poi.longitude).toInt()}
-            AlertDialog(onDismissRequest={selectedPoi=null},title={Text(poi.name?:poiTypeName(poi.poiType))},text={Column(verticalArrangement=Arrangement.spacedBy(5.dp)){Text(poiTypeName(poi.poiType));poi.address?.let{Text(it)};poi.openingHours?.let{Text("Öppet: $it")};poi.phone?.let{Text("Telefon: $it")};poi.website?.let{Text(it,color=androidx.compose.ui.graphics.Color(0xFF5BC8C5))};Text("${distance?:0} m bort");if(poi.hasGameShop)Text(stringResource(R.string.ui_text_031),fontWeight=FontWeight.Bold)}},confirmButton={Button(onClick={val uri=Uri.parse("geo:${poi.latitude},${poi.longitude}?q=${poi.latitude},${poi.longitude}(${Uri.encode(poi.name?:"Hundplats")})");context.startActivity(Intent(Intent.ACTION_VIEW,uri));selectedPoi=null}){Text(stringResource(R.string.ui_text_080))}},dismissButton={TextButton(onClick={selectedPoi=null}){Text(stringResource(R.string.ui_text_064))}})
+            AlertDialog(onDismissRequest={selectedPoi=null},title={Text(poi.name?:poiTypeName(poi.poiType))},text={Column(verticalArrangement=Arrangement.spacedBy(5.dp)){Text(poiTypeName(poi.poiType));poi.address?.let{Text(it)};poi.openingHours?.let{Text(stringResource(R.string.poi_opening_hours,it))};poi.phone?.let{Text(stringResource(R.string.poi_phone,it))};poi.website?.let{Text(it,color=androidx.compose.ui.graphics.Color(0xFF5BC8C5))};Text(stringResource(R.string.poi_distance,distance?:0));if(poi.hasGameShop)Text(stringResource(R.string.ui_text_031),fontWeight=FontWeight.Bold)}},confirmButton={Button(onClick={val uri=Uri.parse("geo:${poi.latitude},${poi.longitude}?q=${poi.latitude},${poi.longitude}(${Uri.encode(poi.name?:context.getString(R.string.poi_fallback_name))})");context.startActivity(Intent(Intent.ACTION_VIEW,uri));selectedPoi=null}){Text(stringResource(R.string.ui_text_080))}},dismissButton={TextButton(onClick={selectedPoi=null}){Text(stringResource(R.string.ui_text_064))}})
         }
         if(homeInfoOpen){
             val homeDistance=player?.let{p->currentProfile.homeLat?.let{lat->currentProfile.homeLon?.let{lon->distanceMeters(p.latitude,p.longitude,lat,lon).toInt()}}}
             val nextMove=currentProfile.homeChangedAt?.let{stamp->runCatching{java.time.Instant.parse(stamp).plus(java.time.Duration.ofHours(24)).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}.getOrNull()}
-            AlertDialog(onDismissRequest={homeInfoOpen=false},title={Text(stringResource(R.string.ui_text_042))},text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Avstånd: ${homeDistance?.let{"$it m"}?:"okänt"}");Text(if(atHome)"Du är hemma och kan använda hemmaautomaten." else "Hemfunktionerna låses upp inom 50 meter.");nextMove?.let{Text("Hemmet kan flyttas igen: $it")}}},confirmButton={if(atHome)Button(onClick={homeInfoOpen=false;activePanel=GamePanel.HOME}){Text(stringResource(R.string.ui_text_010))}else TextButton(onClick={homeInfoOpen=false}){Text(stringResource(R.string.ui_text_064))}})
+            AlertDialog(onDismissRequest={homeInfoOpen=false},title={Text(stringResource(R.string.ui_text_042))},text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text(stringResource(R.string.home_distance,homeDistance?.let{"$it m"}?:stringResource(R.string.home_distance_unknown)));Text(stringResource(if(atHome)R.string.home_available_here else R.string.home_locked_distance));nextMove?.let{Text(stringResource(R.string.home_next_move,it))}}},confirmButton={if(atHome)Button(onClick={homeInfoOpen=false;activePanel=GamePanel.HOME}){Text(stringResource(R.string.ui_text_010))}else TextButton(onClick={homeInfoOpen=false}){Text(stringResource(R.string.ui_text_064))}})
         }
         adminPlacement?.let { point ->
-            var objectType by remember(point){mutableStateOf("bone")};var variant by remember(point){mutableStateOf("0")};var reason by remember(point){mutableStateOf("Manuell kartplacering")};var busy by remember(point){mutableStateOf(false)}
-            AlertDialog(onDismissRequest={if(!busy)adminPlacement=null},title={Text(stringResource(R.string.ui_text_055))},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("${"%.6f".format(point.latitude)}, ${"%.6f".format(point.longitude)}");Row{FilterChip(objectType=="bone",{objectType="bone"},label={Text(stringResource(R.string.ui_text_009))});Spacer(Modifier.width(8.dp));FilterChip(objectType=="pile",{objectType="pile"},label={Text(stringResource(R.string.ui_text_033))})};OutlinedTextField(variant,{variant=it.filter(Char::isDigit).take(2)},label={Text(if(objectType=="bone")"Bentyp 0–11" else "Högtyp 0–4")});OutlinedTextField(reason,{reason=it},label={Text(stringResource(R.string.ui_text_052))})}},confirmButton={Button(enabled=!busy&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={busy=true;scope.launch{runCatching{gameApi?.adminPlaceObject(objectType,point.latitude,point.longitude,variant.toInt(),reason)}.onSuccess{status="Adminobjekt placerat";adminPlacement=null}.onFailure{status="Placeringen misslyckades: ${it.message.orEmpty()}";busy=false}}}){Text(stringResource(R.string.ui_text_053))}},dismissButton={TextButton(onClick={adminPlacement=null}){Text(stringResource(R.string.ui_text_006))}})
+            var objectType by remember(point){mutableStateOf("bone")};var variant by remember(point){mutableStateOf("0")};var reason by remember(point){mutableStateOf("Manuell kartplacering")};var busy by remember(point){mutableStateOf(false)};var confirmed by remember(point){mutableStateOf(false)}
+            AlertDialog(onDismissRequest={if(!busy)adminPlacement=null},title={Text(stringResource(R.string.ui_text_055))},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("${"%.6f".format(point.latitude)}, ${"%.6f".format(point.longitude)}");Row{FilterChip(objectType=="bone",{objectType="bone";confirmed=false},label={Text(stringResource(R.string.ui_text_009))});Spacer(Modifier.width(8.dp));FilterChip(objectType=="pile",{objectType="pile";confirmed=false},label={Text(stringResource(R.string.ui_text_033))})};OutlinedTextField(variant,{variant=it.filter(Char::isDigit).take(2);confirmed=false},label={Text(stringResource(if(objectType=="bone")R.string.admin_bone_type_range else R.string.admin_pile_type_range))});OutlinedTextField(reason,{reason=it;confirmed=false},label={Text(stringResource(R.string.ui_text_052))});if(confirmed)Text(stringResource(R.string.admin_placement_warning),color=androidx.compose.ui.graphics.Color(0xFFFFC85B))}},confirmButton={Button(enabled=!busy&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={if(!confirmed){confirmed=true}else{busy=true;scope.launch{runCatching{gameApi?.adminPlaceObject(objectType,point.latitude,point.longitude,variant.toInt(),reason)}.onSuccess{status=context.getString(R.string.admin_object_placed_status);adminPlacement=null}.onFailure{status=context.getString(R.string.admin_place_failed_status,it.message.orEmpty());busy=false}}}}){Text(stringResource(if(confirmed)R.string.admin_place_anyway else R.string.admin_preview_update))}},dismissButton={TextButton(onClick={adminPlacement=null}){Text(stringResource(R.string.ui_text_006))}})
         }
     }
 }
@@ -1080,25 +1084,38 @@ private fun defaultMarkerBitmap(context: android.content.Context): Bitmap {
     return Bitmap.createScaledBitmap(cropped, 112, 112, false)
 }
 
-private fun markerBitmap(context:android.content.Context,id:String):Bitmap {
+internal fun markerBitmap(context:android.content.Context,id:String):Bitmap {
     if(id=="marker_default_paw")return defaultMarkerBitmap(context)
     val size=112;val bitmap=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);val canvas=Canvas(bitmap)
     val paint=Paint(Paint.ANTI_ALIAS_FLAG);val seed=id.hashCode();val palette=intArrayOf(
         Color.rgb(226,170,61),Color.rgb(22,141,138),Color.rgb(81,137,77),Color.rgb(46,125,170),Color.rgb(205,108,79),Color.rgb(163,113,190)
-    );val accent=palette[Math.floorMod(seed,palette.size)]
+    );val accent=palette[Math.floorMod(seed,palette.size)];val secondary=palette[Math.floorMod(seed/7+3,palette.size)];val variant=Math.floorMod(seed,12)
     paint.color=Color.rgb(18,24,27);canvas.drawCircle(56f,56f,52f,paint);paint.style=Paint.Style.STROKE;paint.strokeWidth=6f;paint.color=if(id=="marker_frasse_mythic")Color.rgb(255,197,64) else accent;canvas.drawCircle(56f,56f,47f,paint);paint.style=Paint.Style.FILL
     when {
         id=="marker_frasse_mythic"||id.startsWith("marker_breed_")-> {
-            paint.color=if(id=="marker_frasse_mythic")Color.rgb(225,173,108) else accent
-            canvas.drawOval(27f,25f,85f,86f,paint);canvas.drawOval(17f,27f,37f,73f,paint);canvas.drawOval(75f,27f,95f,73f,paint)
-            paint.color=Color.BLACK;canvas.drawCircle(46f,51f,4f,paint);canvas.drawCircle(66f,51f,4f,paint);canvas.drawOval(49f,62f,63f,72f,paint)
-            if(id=="marker_frasse_mythic"){paint.color=Color.rgb(16,143,145);canvas.drawRect(31f,79f,81f,90f,paint)}
+            val frasse=id=="marker_frasse_mythic";paint.color=if(frasse)Color.rgb(225,173,108) else accent
+            val wide=(variant%4)*2f;canvas.drawOval(27f-wide,24f+(variant%3),85f+wide,87f,paint)
+            when(if(frasse)0 else variant%3){
+                0->{canvas.drawOval(16f,27f,37f,76f,paint);canvas.drawOval(75f,27f,96f,76f,paint)}
+                1->{val l=android.graphics.Path().apply{moveTo(29f,40f);lineTo(18f,12f);lineTo(45f,28f);close()};val r=android.graphics.Path().apply{moveTo(83f,40f);lineTo(94f,12f);lineTo(67f,28f);close()};canvas.drawPath(l,paint);canvas.drawPath(r,paint)}
+                else->{canvas.drawCircle(28f,36f,15f,paint);canvas.drawCircle(84f,36f,15f,paint)}
+            }
+            if(!frasse&&variant%4==0){paint.color=secondary;canvas.drawOval(30f,27f,52f,55f,paint)}
+            paint.color=Color.BLACK;canvas.drawCircle(45f,51f,3.5f+(variant%2),paint);canvas.drawCircle(67f,51f,3.5f+(variant%2),paint)
+            canvas.drawOval(48f-(variant%3),62f,64f+(variant%3),72f+(variant%4),paint)
+            if(frasse){paint.color=Color.rgb(16,143,145);canvas.drawRect(30f,79f,82f,91f,paint);paint.color=Color.rgb(255,197,64);canvas.drawCircle(56f,84f,4f,paint)}
         }
-        id.startsWith("marker_toy_")-> {paint.color=accent;canvas.drawCircle(56f,56f,29f,paint);paint.style=Paint.Style.STROKE;paint.color=Color.WHITE;paint.strokeWidth=5f;canvas.drawLine(31f,48f,81f,64f,paint);canvas.drawLine(43f,30f,61f,83f,paint);paint.style=Paint.Style.FILL}
-        id.startsWith("marker_tag_")-> {paint.color=accent;val path=android.graphics.Path();path.moveTo(56f,22f);path.lineTo(88f,49f);path.lineTo(56f,91f);path.lineTo(24f,49f);path.close();canvas.drawPath(path,paint);paint.color=Color.WHITE;canvas.drawCircle(56f,43f,7f,paint)}
-        id.startsWith("marker_gear_")-> {paint.style=Paint.Style.STROKE;paint.strokeWidth=11f;paint.color=accent;canvas.drawCircle(49f,57f,25f,paint);canvas.drawLine(68f,40f,89f,22f,paint);paint.style=Paint.Style.FILL}
-        id.startsWith("marker_emblem_")-> {paint.color=accent;val path=android.graphics.Path();path.moveTo(56f,20f);path.lineTo(88f,33f);path.lineTo(81f,76f);path.lineTo(56f,94f);path.lineTo(31f,76f);path.lineTo(24f,33f);path.close();canvas.drawPath(path,paint);paint.color=Color.WHITE;canvas.drawCircle(56f,57f,12f,paint)}
-        else->{paint.color=accent;canvas.drawOval(37f,51f,75f,87f,paint);listOf(32f to 43f,49f to 30f,67f to 30f,84f to 43f).forEach{canvas.drawCircle(it.first,it.second,10f,paint)}}
+        id.startsWith("marker_toy_")-> {paint.color=accent;when(variant%5){
+            0->{canvas.drawCircle(56f,56f,29f,paint);paint.style=Paint.Style.STROKE;paint.color=secondary;paint.strokeWidth=5f;canvas.drawArc(29f,35f,83f,77f,-30f,210f,false,paint)}
+            1->{paint.strokeWidth=12f;paint.style=Paint.Style.STROKE;canvas.drawLine(29f,37f,83f,75f,paint);paint.style=Paint.Style.FILL;canvas.drawCircle(29f,37f,13f,paint);canvas.drawCircle(83f,75f,13f,paint)}
+            2->{canvas.drawOval(25f,40f,87f,72f,paint);paint.color=secondary;canvas.drawCircle(56f,56f,14f,paint)}
+            3->{canvas.drawCircle(42f,47f,20f,paint);canvas.drawCircle(70f,65f,20f,paint);paint.color=secondary;canvas.drawRect(40f,49f,72f,63f,paint)}
+            else->{val p=android.graphics.Path().apply{moveTo(29f,70f);lineTo(38f,30f);lineTo(62f,41f);lineTo(84f,29f);lineTo(76f,78f);close()};canvas.drawPath(p,paint);paint.color=secondary;canvas.drawCircle(63f,59f,7f,paint)}
+        };paint.style=Paint.Style.FILL}
+        id.startsWith("marker_tag_")-> {paint.color=accent;val path=android.graphics.Path();when(variant%3){0->{path.moveTo(56f,20f);path.lineTo(89f,49f);path.lineTo(56f,92f);path.lineTo(23f,49f)};1->{path.moveTo(56f,91f);path.cubicTo(10f,61f,25f,24f,56f,43f);path.cubicTo(87f,24f,102f,61f,56f,91f)};else->{path.moveTo(25f,29f);path.lineTo(87f,29f);path.lineTo(79f,85f);path.lineTo(56f,96f);path.lineTo(33f,85f)}};path.close();canvas.drawPath(path,paint);paint.color=secondary;canvas.drawCircle(56f,44f,6f+(variant%3),paint)}
+        id.startsWith("marker_gear_")-> {paint.style=Paint.Style.STROKE;paint.strokeWidth=8f+(variant%4);paint.color=accent;if(variant%2==0){canvas.drawCircle(47f,58f,25f,paint);canvas.drawLine(66f,41f,91f,20f,paint)}else{canvas.drawRect(26f,34f,82f,78f,paint);canvas.drawLine(39f,34f,39f,22f,paint);canvas.drawLine(69f,34f,69f,22f,paint)};paint.style=Paint.Style.FILL;paint.color=secondary;canvas.drawCircle(87f,24f,7f,paint)}
+        id.startsWith("marker_emblem_")-> {paint.color=accent;val path=android.graphics.Path();path.moveTo(56f,18f);path.lineTo(89f,32f);path.lineTo(81f,77f);path.lineTo(56f,96f);path.lineTo(31f,77f);path.lineTo(23f,32f);path.close();canvas.drawPath(path,paint);paint.color=secondary;if(variant%2==0){canvas.drawCircle(56f,57f,10f+(variant%4),paint)}else{paint.strokeWidth=7f;paint.style=Paint.Style.STROKE;canvas.drawLine(40f,74f,72f,40f,paint);canvas.drawLine(40f,40f,72f,74f,paint);paint.style=Paint.Style.FILL}}
+        else->{paint.color=accent;canvas.drawOval(36f-(variant%3),50f,76f+(variant%3),88f,paint);val toes=if(variant%4==0)3 else 4;repeat(toes){i->val x=32f+i*(52f/(toes-1).coerceAtLeast(1));val y=39f-kotlin.math.abs(i-(toes-1)/2f)*5f;canvas.drawCircle(x,y,8f+(variant%3),paint)};if(variant%3==0){paint.color=secondary;canvas.drawCircle(56f,68f,8f,paint)}}
     }
     return bitmap
 }
