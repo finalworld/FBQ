@@ -347,6 +347,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
         val p=player;val lat=currentProfile.homeLat;val lon=currentProfile.homeLon
         p!=null&&lat!=null&&lon!=null&&distanceMeters(p.latitude,p.longitude,lat,lon)<=50.0
     }
+    val actionStackCount=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)+
+        (if(nearShop!=null)1 else 0)+(if(atHome)1 else 0)
     LaunchedEffect(nearBone) { selectedBone = nearBone }
     LaunchedEffect(nearBone!=null,currentProfile.walkingModeEnabled,currentProfile.barkEnabled,currentProfile.vibrationEnabled) {
         if(nearBone==null){insideForegroundBoneZone=false;return@LaunchedEffect}
@@ -424,7 +426,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
             if (!followPlayer) {
                 FloatingActionButton(
                     onClick = { followPlayer = true },
-                    modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(18.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding()
+                        .padding(end=18.dp,bottom=(18+70*actionStackCount).dp),
                     containerColor = androidx.compose.ui.graphics.Color(0xFF213141)
                 ) { Text(stringResource(R.string.ui_text_088), fontSize = 28.sp) }
             }
@@ -518,10 +521,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text(stringResource(R.string.ui_text_027))},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Image(painterResource(dirtDrawable(pile.type)),null,Modifier.size(82.dp).align(Alignment.CenterHorizontally));Text(stringResource(R.string.pile_confirm_body,pile.cost))}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{if(worldRepository!=null)runCatching{worldRepository.openPile(pile.id)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status=context.getString(R.string.pile_spinning)},onFailure={status=if(it.message?.contains("PILE_ALREADY_CLAIMED")==true)context.getString(R.string.pile_claimed_first) else context.getString(R.string.pile_open_failed)});collecting=false;selectedPile=null;pileToConfirm=null}}){Text(stringResource(R.string.pile_pay_button,pile.cost))}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text(stringResource(R.string.ui_text_006))}})
             }
             if (statusText != null) {
-                val actionCount=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)+(if(nearShop!=null)1 else 0)+(if(atHome)1 else 0)
                 Surface(
                     modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
-                        .padding(bottom=if(actionCount==0)10.dp else (24+70*actionCount).dp),
+                        .padding(bottom=if(actionStackCount==0)10.dp else (24+70*actionStackCount).dp),
                     color = androidx.compose.ui.graphics.Color(0xF2171A1C),
                     shape = RoundedCornerShape(4.dp)
                 ) {
