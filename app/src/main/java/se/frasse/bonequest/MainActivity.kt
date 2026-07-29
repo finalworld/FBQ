@@ -135,12 +135,25 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 }
             }
         }
+        val refreshJob = launch {
+            // Realtime normally updates the map immediately. Some Android
+            // vendors silently suspend the websocket, so keep a small,
+            // invisible safety refresh while the game screen is active.
+            while (true) {
+                delay(5_000)
+                val center = player ?: continue
+                runCatching { server.loadNearby(center) }.onSuccess {
+                    bones=it.bones; piles=it.piles
+                }
+            }
+        }
         runCatching { server.subscribe() }
             .onFailure { status = "Liveuppdateringen kunde inte ansluta" }
         try {
             kotlinx.coroutines.awaitCancellation()
         } finally {
             changesJob.cancel()
+            refreshJob.cancel()
         }
     }
 
