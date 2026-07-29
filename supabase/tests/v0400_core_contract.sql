@@ -115,6 +115,10 @@ begin
      or not has_function_privilege('authenticated','public.get_flock_member_bone_collection(uuid,uuid)','EXECUTE') then
     raise exception 'Flock member collection RPC privileges invalid';
   end if;
+  if pg_get_functiondef('public.get_flock_member_bone_collection(uuid,uuid)'::regprocedure)
+     not like '%public.player_bone_collection%' then
+    raise exception 'Flock member collection RPC reads the wrong lifetime collection table';
+  end if;
 end $$;
 
 rollback;

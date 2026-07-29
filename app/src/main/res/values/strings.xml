@@ -213,4 +213,27 @@
     <string name="settings_saved">Inställningarna är sparade.</string>
     <string name="settings_save_failed">Kunde inte spara inställningarna.</string>
     <string name="account_delete_failed">Kontot kunde inte raderas. Kontrollera flockledarskap och namnet.</string>
+    <string name="flock_role_leader">Flockledare</string>
+    <string name="flock_role_guard">Flockvakt</string>
+    <string name="flock_role_member">Flockmedlem</string>
+    <string name="flock_detail_summary">%1$s • %2$d medlemmar • bank %3$.1f</string>
+    <string name="flock_member_summary">%1$s • %2$.2f km • %3$d ben • %4$d hittade • %5$d högar</string>
+    <string name="flock_tab_members">MEDLEMMAR</string>
+    <string name="flock_tab_applications">ANSÖKNINGAR</string>
+    <string name="flock_tab_bank">BANK</string>
+    <string name="flock_tab_manage">HANTERA</string>
+    <string name="flock_tab_mine">MINA</string>
+    <string name="flock_tab_all">ALLA</string>
+    <string name="flock_tab_create">SKAPA</string>
+    <string name="flock_make_member">GÖR MEDLEM</string>
+    <string name="flock_make_guard">GÖR VAKT</string>
+    <string name="flock_delete_title">Ta bort %1$s?</string>
+    <string name="flock_load_failed">Kunde inte hämta flockarna.</string>
+    <string name="flock_renamed">Flocken döptes om.</string>
+    <string name="flock_rename_failed">Namnbytet gick inte. Kontrollera bank, namn och cooldown.</string>
+    <string name="flock_application_sent">Ansökan skickad.</string>
+    <string name="flock_application_failed">Ansökan kunde inte skickas.</string>
+    <string name="flock_created">Flocken skapades!</string>
+    <string name="flock_create_failed">Kontrollera namnet, saldot och flockplatserna.</string>
+    <string name="flock_list_summary">%1$s • %2$d • bank %3$.1f</string>
 </resources>

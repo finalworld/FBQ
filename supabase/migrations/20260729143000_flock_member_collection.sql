@@ -10,7 +10,7 @@ begin
     raise exception 'FLOCK_MEMBER_REQUIRED' using errcode='42501';
   end if;
   return query select t.id,coalesce(l.lifetime_count,0)
-  from public.bone_types t left join public.player_bone_lifetime l
+  from public.bone_types t left join public.player_bone_collection l
     on l.bone_type=t.id and l.player_id=p_member_id order by t.id;
 end $$;
 revoke execute on function public.get_flock_member_bone_collection(uuid,uuid) from public,anon;
