@@ -18,6 +18,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -101,6 +103,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var collecting by remember { mutableStateOf(false) }
     var lastWorldLoadAt by remember { mutableLongStateOf(0L) }
     var lastWorldCenter by remember { mutableStateOf<GeoPoint?>(null) }
+    var gpsHasBeenReady by remember { mutableStateOf(false) }
+    var gpsWasInError by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionGranted = it
         if (!it) status = "GPS-behörighet behövs för att spela"
@@ -133,7 +137,14 @@ internal fun GameScreen(profile:SessionBootstrap) {
             tracker.start { location ->
                 val point = GeoPoint(location.latitude, location.longitude)
                 player = point
-                status = if (location.accuracy <= 25) "GPS klar" else "GPS noggrannhet ±${location.accuracy.toInt()} m"
+                if (location.accuracy <= 25) {
+                    if (!gpsHasBeenReady || gpsWasInError) status = "GPS klar"
+                    gpsHasBeenReady = true
+                    gpsWasInError = false
+                } else if (!gpsWasInError) {
+                    status = "GPS noggrannhet ±${location.accuracy.toInt()} m"
+                    gpsWasInError = true
+                }
                 if (worldRepository!=null) {
                     val needsReload=lastWorldCenter?.let {
                         distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>100
@@ -284,8 +295,13 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                                 bones=bones.filterNot { it.id in ids }
                                                 status=if (rewards.maxOfOrNull { it.rewardedPlayers } ?: 1>1)
                                                     "+$reward ben • flera spelare belönades" else "+$reward ben"
-                                            },onFailure = { status=if (it.message?.contains("NO_BONES_IN_RANGE")==true)
-                                                "Någon hann ta benet före dig." else "Kunde inte ta benet" }
+                                            },onFailure = { error ->
+                                                status = when {
+                                                    error.message?.contains("NO_BONES_IN_RANGE")==true -> "Någon hann ta benet före dig."
+                                                    error.message?.contains("ACCURATE_LOCATION_REQUIRED")==true -> "GPS-signalen är inte tillräckligt exakt ännu."
+                                                    else -> "Kunde inte ta benet: ${error.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"
+                                                }
+                                            }
                                         )
                                     } else {
                                         val inRange = if (p0 == null) emptyList() else bones.filter { distanceMeters(p0.latitude,p0.longitude,it.latitude,it.longitude) <= 25.0 }
@@ -302,16 +318,17 @@ internal fun GameScreen(profile:SessionBootstrap) {
                         ActionButtonContent(
                             iconDrawable=R.drawable.bone_01,
                             label=if (collecting) "SAMLAR…" else "TA BENET",
-                            detail="+${boneValue(bone.type)}  •  ${distance.toInt()} m"
+                            detail="+${boneValue(bone.type)} BEN  •  ${distance.toInt()} M"
                         )
                     }
                 }
             }
 
             val statusText = if (loadingBones) "Letar gångstigar…" else status
-            if (statusText != null && nearBone==null) {
+            if (statusText != null) {
                 Surface(
-                    modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=10.dp),
+                    modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+                        .padding(bottom=if (nearBone==null) 10.dp else 94.dp),
                     color = androidx.compose.ui.graphics.Color(0xF2171A1C),
                     shape = RoundedCornerShape(4.dp)
                 ) {
@@ -361,7 +378,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
 
 @Composable
 private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFF171A1C))) {
+    Box(modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(
+        androidx.compose.ui.graphics.Color(0xFF101619),
+        androidx.compose.ui.graphics.Color(0xFF1D2020),
+        androidx.compose.ui.graphics.Color(0xFF101619)
+    )))) {
         Box(Modifier.statusBarsPadding().fillMaxWidth().height(62.dp)) {
         Row(Modifier.fillMaxSize(),verticalAlignment=Alignment.CenterVertically) {
             Box(
@@ -395,7 +416,13 @@ private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier
 
 @Composable
 private fun ActionButtonContent(iconDrawable:Int,label:String,detail:String) {
-    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xF2171A1C))) {
+    Box(Modifier.fillMaxSize()
+        .background(Brush.horizontalGradient(listOf(
+            androidx.compose.ui.graphics.Color(0xFF101619),
+            androidx.compose.ui.graphics.Color(0xFF24231F),
+            androidx.compose.ui.graphics.Color(0xFF101619)
+        )))
+        .border(1.dp,androidx.compose.ui.graphics.Color(0xFF8B642E))) {
         Row(Modifier.fillMaxSize(),verticalAlignment=Alignment.CenterVertically) {
             Box(Modifier.width(62.dp).fillMaxHeight(),contentAlignment=Alignment.Center) {
                 Image(painterResource(iconDrawable),null,Modifier.size(43.dp),contentScale=ContentScale.Fit)
@@ -403,7 +430,7 @@ private fun ActionButtonContent(iconDrawable:Int,label:String,detail:String) {
             Box(Modifier.width(1.dp).fillMaxHeight(.68f).background(androidx.compose.ui.graphics.Color(0xFF8B642E)))
             Text(label,Modifier.padding(start=16.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=18.sp)
             Spacer(Modifier.weight(1f))
-            Text(detail,Modifier.padding(end=15.dp),color=androidx.compose.ui.graphics.Color(0xFFFFE8BE),fontWeight=FontWeight.Bold,fontSize=13.sp)
+            Text(detail,Modifier.padding(end=15.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=15.sp)
         }
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp).background(androidx.compose.ui.graphics.Color(0xFFD9A441)))
     }
