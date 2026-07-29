@@ -89,7 +89,9 @@ class GameApiRepository(private val client:SupabaseClient) {
     suspend fun buy(poiId:String,itemId:String):PurchaseResult = client.postgrest.rpc("buy_shop_item",buildJsonObject {
         put("p_poi_id",poiId);put("p_item_id",itemId);put("p_client_request_id",UUID.randomUUID().toString())
     }).decodeSingle()
-    suspend fun equip(itemId:String):String = client.postgrest.rpc("equip_marker",buildJsonObject { put("p_item_id",itemId) }).decodeSingle()
+    suspend fun equip(itemId:String):String = client.postgrest.rpc(
+        "equip_marker",buildJsonObject { put("p_item_id",itemId) }
+    ).data.trim().trim('"')
     suspend fun listFlocks(search:String?=null):List<FlockSummary> = client.postgrest.rpc("list_flocks",buildJsonObject {
         if(search==null) put("search_text",kotlinx.serialization.json.JsonNull) else put("search_text",search)
     }).decodeList()

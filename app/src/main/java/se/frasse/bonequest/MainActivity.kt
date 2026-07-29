@@ -533,7 +533,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 }
             }
             pileToConfirm?.let{pile->
-                AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text(stringResource(R.string.ui_text_027))},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Image(painterResource(dirtDrawable(pile.type)),null,Modifier.size(82.dp).align(Alignment.CenterHorizontally));Text(stringResource(R.string.pile_confirm_body,pile.cost))}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{if(worldRepository!=null)runCatching{worldRepository.openPile(pile.id)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status=context.getString(R.string.pile_spinning)},onFailure={status=if(it.message?.contains("PILE_ALREADY_CLAIMED")==true)context.getString(R.string.pile_claimed_first) else context.getString(R.string.pile_open_failed)});collecting=false;selectedPile=null;pileToConfirm=null}}){Text(stringResource(R.string.pile_pay_button,pile.cost))}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text(stringResource(R.string.ui_text_006))}})
+                AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text(stringResource(R.string.ui_text_027))},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Image(painterResource(dirtDrawable(pile.type)),null,Modifier.size(82.dp).align(Alignment.CenterHorizontally));Text(stringResource(R.string.pile_confirm_body,pile.cost))}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{if(worldRepository!=null)runCatching{worldRepository.openPile(pile.id)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status=context.getString(R.string.pile_spinning)},onFailure={status=when{it.message?.contains("PILE_ALREADY_CLAIMED")==true->context.getString(R.string.pile_claimed_first);it.message?.contains("INSUFFICIENT_BONES")==true->context.getString(R.string.action_need_bones,pile.cost);it.message?.contains("PILE_OUT_OF_RANGE")==true->"Du är för långt från högen.";it.message?.contains("ACCURATE_LOCATION_REQUIRED")==true->context.getString(R.string.bone_gps_inaccurate);else->"${context.getString(R.string.pile_open_failed)} ${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"}});collecting=false;selectedPile=null;pileToConfirm=null}}){Text(stringResource(R.string.pile_pay_button,pile.cost))}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text(stringResource(R.string.ui_text_006))}})
             }
             if (statusText != null) {
                 Surface(
@@ -1191,6 +1191,17 @@ internal fun markerBitmap(context:android.content.Context,id:String):Bitmap {
         val source=BitmapFactory.decodeResource(context.resources,R.drawable.marker_frasse_mythic)
         return Bitmap.createScaledBitmap(source,112,112,true)
     }
+    markerAtlasIndex(id)?.let { index ->
+        val atlas=BitmapFactory.decodeResource(context.resources,R.drawable.marker_atlas_pixel_v1)
+        val column=index%10
+        val row=index/10
+        val left=(column*atlas.width/10.0).toInt()
+        val top=(row*atlas.height/10.0).toInt()
+        val right=(((column+1)*atlas.width/10.0).toInt()).coerceAtMost(atlas.width)
+        val bottom=(((row+1)*atlas.height/10.0).toInt()).coerceAtMost(atlas.height)
+        val cell=Bitmap.createBitmap(atlas,left,top,right-left,bottom-top)
+        return Bitmap.createScaledBitmap(cell,112,112,false)
+    }
     val size=112;val bitmap=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);val canvas=Canvas(bitmap)
     val paint=Paint(Paint.ANTI_ALIAS_FLAG);val seed=id.hashCode();val palette=intArrayOf(
         Color.rgb(226,170,61),Color.rgb(22,141,138),Color.rgb(81,137,77),Color.rgb(46,125,170),Color.rgb(205,108,79),Color.rgb(163,113,190)
@@ -1223,6 +1234,19 @@ internal fun markerBitmap(context:android.content.Context,id:String):Bitmap {
         else->{paint.color=accent;canvas.drawOval(36f-(variant%3),50f,76f+(variant%3),88f,paint);val toes=if(variant%4==0)3 else 4;repeat(toes){i->val x=32f+i*(52f/(toes-1).coerceAtLeast(1));val y=39f-kotlin.math.abs(i-(toes-1)/2f)*5f;canvas.drawCircle(x,y,8f+(variant%3),paint)};if(variant%3==0){paint.color=secondary;canvas.drawCircle(56f,68f,8f,paint)}}
     }
     return bitmap
+}
+
+private fun markerAtlasIndex(id:String):Int? {
+    fun suffix(prefix:String)=id.removePrefix(prefix).toIntOrNull()?.minus(1)
+    return when {
+        id.startsWith("marker_breed_")->suffix("marker_breed_")?.takeIf{it in 0..35}
+        id.startsWith("marker_toy_")->suffix("marker_toy_")?.takeIf{it in 0..19}?.plus(40)
+        id.startsWith("marker_paw_")->suffix("marker_paw_")?.takeIf{it in 0..11}?.plus(60)
+        id.startsWith("marker_tag_")->suffix("marker_tag_")?.takeIf{it in 0..9}?.plus(72)
+        id.startsWith("marker_gear_")->suffix("marker_gear_")?.takeIf{it in 0..7}?.plus(82)
+        id.startsWith("marker_emblem_")->suffix("marker_emblem_")?.takeIf{it in 0..9}?.plus(90)
+        else->null
+    }
 }
 
 private fun boneBitmap(context: android.content.Context): Bitmap {
