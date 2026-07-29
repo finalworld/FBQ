@@ -18,7 +18,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -160,20 +158,22 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     gpsWasInError = true
                 }
                 if (worldRepository!=null) {
-                    if (location.accuracy <= 25 && !startupTestBonePlaced) {
-                        startupTestBonePlaced = true
-                        scope.launch {
-                            runCatching { worldRepository.placeStartupTestBone(point) }
-                                .onFailure { startupTestBonePlaced = false }
-                        }
-                    }
                     val needsReload=lastWorldCenter?.let {
                         distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>100
                     } ?: true
                     scope.launch {
-                        runCatching { worldRepository.updatePresence(
+                        val presenceUpdated = runCatching { worldRepository.updatePresence(
                             point,location.accuracy,location.bearing,location.speed.takeIf { location.hasSpeed() }
-                        ) }
+                        ) }.isSuccess
+                        // The server must know the same fresh position before
+                        // the startup test bone is placed. Running these in
+                        // separate coroutines could leave collection checking
+                        // yesterday's stale presence for a few seconds.
+                        if (presenceUpdated && location.accuracy <= 25 && !startupTestBonePlaced) {
+                            startupTestBonePlaced = true
+                            runCatching { worldRepository.placeStartupTestBone(point) }
+                                .onFailure { startupTestBonePlaced = false }
+                        }
                         if (needsReload && System.currentTimeMillis()-lastWorldLoadAt>5_000) {
                             loadingBones=true
                             runCatching { worldRepository.loadNearby(point) }
@@ -401,7 +401,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
 private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth()) {
         Image(
-            painter = painterResource(R.drawable.hud_panel_pixel),
+            painter = painterResource(R.drawable.hud_panel_pixel_v2),
             contentDescription = null,
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.FillBounds
@@ -413,12 +413,12 @@ private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier
                 contentAlignment=Alignment.Center
             ) {
                 Column(
-                    modifier = Modifier.width(29.dp).height(25.dp),
+                    modifier = Modifier.width(23.dp).height(19.dp),
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
                     repeat(3) {
                         Box(
-                            Modifier.fillMaxWidth().height(5.dp)
+                            Modifier.fillMaxWidth().height(4.dp)
                                 .background(androidx.compose.ui.graphics.Color(0xFFFFE0A0))
                         )
                     }
@@ -451,23 +451,21 @@ private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier
 
 @Composable
 private fun ActionButtonContent(iconDrawable:Int,label:String,detail:String) {
-    Box(Modifier.fillMaxSize()
-        .background(Brush.horizontalGradient(listOf(
-            androidx.compose.ui.graphics.Color(0xFF101619),
-            androidx.compose.ui.graphics.Color(0xFF24231F),
-            androidx.compose.ui.graphics.Color(0xFF101619)
-        )))
-        .border(1.dp,androidx.compose.ui.graphics.Color(0xFF8B642E))) {
+    Box(Modifier.fillMaxSize()) {
+        Image(
+            painter = painterResource(R.drawable.action_panel_pixel),
+            contentDescription = null,
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.FillBounds
+        )
         Row(Modifier.fillMaxSize(),verticalAlignment=Alignment.CenterVertically) {
-            Box(Modifier.width(62.dp).fillMaxHeight(),contentAlignment=Alignment.Center) {
+            Box(Modifier.width(84.dp).fillMaxHeight(),contentAlignment=Alignment.Center) {
                 Image(painterResource(iconDrawable),null,Modifier.size(43.dp),contentScale=ContentScale.Fit)
             }
-            Box(Modifier.width(1.dp).fillMaxHeight(.68f).background(androidx.compose.ui.graphics.Color(0xFF8B642E)))
-            Text(label,Modifier.padding(start=16.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=18.sp)
+            Text(label,Modifier.padding(start=12.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=18.sp)
             Spacer(Modifier.weight(1f))
-            Text(detail,Modifier.padding(end=15.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=15.sp)
+            Text(detail,Modifier.padding(end=18.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=15.sp)
         }
-        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp).background(androidx.compose.ui.graphics.Color(0xFFD9A441)))
     }
 }
 
