@@ -378,18 +378,32 @@ internal fun GameScreen(profile:SessionBootstrap) {
 
 @Composable
 private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(
-        androidx.compose.ui.graphics.Color(0xFF101619),
-        androidx.compose.ui.graphics.Color(0xFF1D2020),
-        androidx.compose.ui.graphics.Color(0xFF101619)
-    )))) {
+    Box(modifier.fillMaxWidth()) {
+        Image(
+            painter = painterResource(R.drawable.hud_panel_pixel),
+            contentDescription = null,
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.FillBounds
+        )
         Box(Modifier.statusBarsPadding().fillMaxWidth().height(62.dp)) {
         Row(Modifier.fillMaxSize(),verticalAlignment=Alignment.CenterVertically) {
             Box(
                 Modifier.width(64.dp).fillMaxHeight().clickable(onClick=onMenu),
                 contentAlignment=Alignment.Center
-            ) { Text("☰",fontSize=30.sp,color=androidx.compose.ui.graphics.Color(0xFFFFE8BE)) }
-            Box(Modifier.width(1.dp).fillMaxHeight(.72f).background(androidx.compose.ui.graphics.Color(0xFF8B642E)))
+            ) {
+                Column(
+                    modifier = Modifier.width(29.dp).height(25.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    repeat(3) {
+                        Box(
+                            Modifier.fillMaxWidth().height(5.dp)
+                                .background(androidx.compose.ui.graphics.Color(0xFFFFE0A0))
+                        )
+                    }
+                }
+            }
+            Box(Modifier.width(2.dp).fillMaxHeight(.72f).background(androidx.compose.ui.graphics.Color(0xFFC79439)))
             Image(
                 painter=painterResource(R.drawable.hud_logo),
                 contentDescription="Frasse’s Bone Quest",
@@ -409,7 +423,7 @@ private fun TopHud(count: Int, onMenu: () -> Unit, modifier: Modifier = Modifier
             )
         }
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp)
-            .background(androidx.compose.ui.graphics.Color(0xFFD9A441)))
+            .background(androidx.compose.ui.graphics.Color(0xFFFFC85B)))
         }
     }
 }
