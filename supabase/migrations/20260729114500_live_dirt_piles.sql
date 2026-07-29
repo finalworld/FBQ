@@ -3,7 +3,7 @@
 create or replace function private.maintain_dirt_piles(player_lat double precision,player_lon double precision)
 returns void language plpgsql volatile security definer set search_path=''
 as $$
-declare p record;c record;n integer;i integer;t smallint;
+declare p record;c record;n integer;i integer;t smallint;attempt integer;
 begin
   for p in select id,latitude,longitude from public.dirt_piles
     where not active and respawn_at<=now() for update skip locked
@@ -18,7 +18,16 @@ begin
     private.distance_meters(player_lat,player_lon,d.latitude,d.longitude)<=3000;
   if n < 4 then
   for i in n+1..4 loop
-    select * into c from private.random_point_from(player_lat,player_lon,600.0,2800.0);
+    -- Prefer 750+ metres between piles so each one becomes a deliberate walk.
+    -- After twelve attempts we accept the best random point rather than leave
+    -- an area without its promised pile count.
+    for attempt in 1..12 loop
+      select * into c from private.random_point_from(player_lat,player_lon,600.0,2800.0);
+      exit when not exists(
+        select 1 from public.dirt_piles d where d.active and
+          private.distance_meters(c.latitude,c.longitude,d.latitude,d.longitude)<750
+      );
+    end loop;
     t:=floor(random()*5)::smallint;
     insert into public.dirt_piles(latitude,longitude,pile_type,cost,active,updated_at)
     values(c.latitude,c.longitude,t,(array[10,25,50,100,250])[t+1],true,now());

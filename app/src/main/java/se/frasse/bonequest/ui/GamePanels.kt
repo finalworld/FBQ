@@ -71,6 +71,7 @@ private val PanelTeal=Color(0xFF168D8A)
 @Composable fun GamePanelScreen(
     panel:GamePanel,profile:SessionBootstrap,api:GameApiRepository,shopPoi:MapPoi?=null,
     poiSettings:PoiSettings=PoiSettings(),onPoiSettings:(PoiSettings)->Unit={},
+    onAdminMapMode:()->Unit={},
     onClose:()->Unit,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit
 ) {
     Surface(Modifier.fillMaxSize(),color=PanelDark) {
@@ -89,7 +90,7 @@ private val PanelTeal=Color(0xFF168D8A)
                     GamePanel.HOME -> HomePanel(profile,api,onBalance,onProfile)
                     GamePanel.SETTINGS -> SettingsPanel(profile,api,poiSettings,onPoiSettings,onProfile)
                     GamePanel.SHOP -> ShopPanel(profile,api,shopPoi,onBalance)
-                    GamePanel.ADMIN -> AdminPanel(api)
+                    GamePanel.ADMIN -> AdminPanel(api,onAdminMapMode)
                 }
             }
         }
@@ -105,7 +106,7 @@ private fun panelTitle(p:GamePanel)=when(p){
 @Composable private fun ProfilePanel(profile:SessionBootstrap,api:GameApiRepository,onProfile:(SessionBootstrap)->Unit) {
     val scope=rememberCoroutineScope();var edit by remember{mutableStateOf(false)};var name by remember{mutableStateOf(profile.displayName)};var message by remember{mutableStateOf<String?>(null)}
     LazyColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        item { StatCard("Spelarnamn",profile.displayName);StatCard("Bensaldo",profile.boneCount.toString());StatCard("Promenerat","%.2f km".format(profile.totalMeters/1000.0));StatCard("Ben hittade",profile.totalBones.toString());StatCard("Jordhögar",profile.totalPiles.toString());StatCard("Aktiv markör",profile.activeMarkerId) }
+        item { StatCard("Spelarnamn",profile.displayName);StatCard("Medlem sedan",profile.createdAt.take(10));StatCard("Bensaldo",profile.boneCount.toString());StatCard("Promenerat","%.2f km".format(profile.totalMeters/1000.0));StatCard("Ben hittade",profile.totalBones.toString());StatCard("Jordhögar",profile.totalPiles.toString());StatCard("Aktiv markör",profile.activeMarkerId) }
         item { Button(onClick={edit=!edit},modifier=Modifier.fillMaxWidth()){Text("ÄNDRA NAMN (24 H COOLDOWN)")} }
         if(edit) item { OutlinedTextField(name,{name=it.take(20)},Modifier.fillMaxWidth(),singleLine=true);Button(enabled=GameNameRules.isValidPlayerName(name),onClick={scope.launch{runCatching{api.changeName(name);api.bootstrap()}.onSuccess{onProfile(it);edit=false}.onFailure{message="Namnet kunde inte ändras ännu"}}}){Text("SPARA")}}
         message?.let { item { Text(it,color=PanelGold) } }
@@ -163,14 +164,17 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 }
 
 @Composable private fun ShopPanel(profile:SessionBootstrap,api:GameApiRepository,poi:MapPoi?,onBalance:(Long)->Unit) {
-    val scope=rememberCoroutineScope();var catalog by remember{mutableStateOf<List<ShopItem>>(emptyList())};var category by remember{mutableStateOf<String?>(null)};var message by remember{mutableStateOf<String?>(null)}
+    val scope=rememberCoroutineScope();var catalog by remember{mutableStateOf<List<ShopItem>>(emptyList())};var category by remember{mutableStateOf<String?>(null)};var message by remember{mutableStateOf<String?>(null)};var pendingPurchase by remember{mutableStateOf<ShopItem?>(null)}
     fun reload(){scope.launch{catalog=runCatching{api.catalog()}.getOrDefault(emptyList());if(category==null)category=catalog.firstOrNull()?.subcategory}}
     LaunchedEffect(Unit){reload()}
     Row(Modifier.fillMaxSize()){
         LazyColumn(Modifier.width(112.dp).fillMaxHeight().background(Color(0xFF111719))){items(catalog.map{it.subcategory}.distinct()){cat->Text(cat,Modifier.fillMaxWidth().clickable{category=cat}.padding(10.dp),color=if(category==cat)PanelGold else PanelCream,fontSize=12.sp)}}
-        LazyColumn(Modifier.weight(1f).padding(start=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){message?.let{item{Text(it,color=PanelGold)}};items(catalog.filter{it.subcategory==category}){item->Column(Modifier.fillMaxWidth().background(if(item.owned)Color.DarkGray else Color(0xFF20282A)).padding(10.dp)){Text(item.nameSv,color=PanelCream,fontWeight=FontWeight.Bold);Text("${item.rarity} • ${item.price} ben",color=if(item.price>profile.boneCount)Color(0xFFFF6961) else PanelGold);Button(enabled=!item.owned&&item.price<=profile.boneCount&&poi!=null,onClick={scope.launch{runCatching{api.buy(poi!!.poiId,item.itemId)}.onSuccess{onBalance(it.balance);message="${item.nameSv} köpt!";reload()}.onFailure{message="Köpet misslyckades. Du måste vara vid butiken."}}}){Text(if(item.owned)"ÄGS" else "KÖP")}}}}
+        LazyColumn(Modifier.weight(1f).padding(start=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){message?.let{item{Text(it,color=PanelGold)}};items(catalog.filter{it.subcategory==category}){item->Column(Modifier.fillMaxWidth().background(if(item.owned)Color.DarkGray else Color(0xFF20282A)).padding(10.dp)){Box(Modifier.size(46.dp).background(rarityColor(item.rarity),RoundedCornerShape(23.dp)),contentAlignment=Alignment.Center){Text(markerGlyph(item.assetName),fontSize=25.sp)};Text(item.nameSv,color=PanelCream,fontWeight=FontWeight.Bold);Text("${item.rarity} • ${item.price} ben",color=if(item.price>profile.boneCount)Color(0xFFFF6961) else PanelGold);Button(enabled=!item.owned&&item.price<=profile.boneCount&&poi!=null,onClick={pendingPurchase=item}){Text(if(item.owned)"ÄGS" else "KÖP")}}}}
     }
+    pendingPurchase?.let{item->AlertDialog(onDismissRequest={pendingPurchase=null},title={Text("Köp ${item.nameSv}?")},text={Text("Det kostar ${item.price} ben. Föremålet utrustas senare under Min utrustning.")},confirmButton={Button(onClick={pendingPurchase=null;scope.launch{runCatching{api.buy(poi!!.poiId,item.itemId)}.onSuccess{onBalance(it.balance);message="${item.nameSv} köpt!";reload()}.onFailure{message="Köpet misslyckades. Du måste vara vid butiken."}}}){Text("KÖP")}},dismissButton={TextButton(onClick={pendingPurchase=null}){Text("AVBRYT")}})}
 }
+private fun markerGlyph(asset:String)=when{asset.contains("breed")->"🐶";asset.contains("toy")->"🎾";asset.contains("tag")->"🏷";asset.contains("gear")->"🦮";else->"🐾"}
+private fun rarityColor(rarity:String)=when(rarity){"mythic"->Color(0xFFE2AA3D);"legendary"->Color(0xFF8D54C7);"epic"->Color(0xFF316DC1);"rare"->Color(0xFF168D8A);else->Color(0xFF3C4547)}
 
 @Composable private fun SettingsPanel(profile:SessionBootstrap,api:GameApiRepository,initialPoiSettings:PoiSettings,onPoiSettings:(PoiSettings)->Unit,onProfile:(SessionBootstrap)->Unit) {
     val context=LocalContext.current;val scope=rememberCoroutineScope();var walking by remember{mutableStateOf(profile.walkingModeEnabled)};var bark by remember{mutableStateOf(profile.barkEnabled)};var vibration by remember{mutableStateOf(profile.vibrationEnabled)};var poiSettings by remember(initialPoiSettings){mutableStateOf(initialPoiSettings)};var saved by remember{mutableStateOf<String?>(null)};var deleting by remember{mutableStateOf(false)};var confirmation by remember{mutableStateOf("")}
@@ -250,15 +254,35 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 
 private fun roleName(role:String)=when(role){"leader"->"Flockledare";"guard"->"Flockvakt";else->"Flockmedlem"}
 
-@Composable private fun AdminPanel(api:GameApiRepository){
-    val scope=rememberCoroutineScope();var tab by remember{mutableIntStateOf(0)};var search by remember{mutableStateOf("")};var players by remember{mutableStateOf<List<AdminPlayer>>(emptyList())};var selected by remember{mutableStateOf<AdminPlayer?>(null)};var amount by remember{mutableStateOf("")};var reason by remember{mutableStateOf("")};var lat by remember{mutableStateOf("")};var lon by remember{mutableStateOf("")};var variant by remember{mutableStateOf("0")};var type by remember{mutableStateOf("bone")};var message by remember{mutableStateOf<String?>(null)};var audits by remember{mutableStateOf<List<AdminAudit>>(emptyList())}
+@Composable private fun AdminPanel(api:GameApiRepository,onMapMode:()->Unit){
+    val scope=rememberCoroutineScope();var tab by remember{mutableIntStateOf(0)}
+    var search by remember{mutableStateOf("")};var players by remember{mutableStateOf<List<AdminPlayer>>(emptyList())};var selected by remember{mutableStateOf<AdminPlayer?>(null)}
+    var amount by remember{mutableStateOf("")};var forcedName by remember{mutableStateOf("")};var itemId by remember{mutableStateOf("")};var reason by remember{mutableStateOf("")}
+    var lat by remember{mutableStateOf("")};var lon by remember{mutableStateOf("")};var variant by remember{mutableStateOf("0")};var type by remember{mutableStateOf("bone")}
+    var message by remember{mutableStateOf<String?>(null)};var audits by remember{mutableStateOf<List<AdminAudit>>(emptyList())}
     fun find(){scope.launch{players=runCatching{api.adminPlayers(search)}.getOrDefault(emptyList())}}
     Column{
         Text("ADMINLÄGE • ändrar aldrig ditt eget normala spel",color=Color(0xFFFF6B5D),fontWeight=FontWeight.Black)
+        Button(onClick=onMapMode,modifier=Modifier.fillMaxWidth()){Text("ÖPPNA ADMINLÄGE PÅ KARTAN")}
         TabRow(tab){listOf("SPELARE","PLACERA","LOGG").forEachIndexed{i,t->Tab(tab==i,{tab=i;if(i==2)scope.launch{audits=runCatching{api.audit()}.getOrDefault(emptyList())}},text={Text(t,fontSize=11.sp)})}}
         message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(7.dp))}
         when(tab){
-            0->Column{Row{OutlinedTextField(search,{search=it},Modifier.weight(1f),label={Text("Namn eller UUID")});Button(onClick={find()},modifier=Modifier.padding(start=5.dp)){Text("SÖK")}};selected?.let{p->Text(p.displayName,color=PanelGold,fontSize=20.sp);Text("${p.boneCount} ben • ${if(p.isSuspended)"avstängd" else "aktiv"}",color=PanelCream);OutlinedTextField(amount,{amount=it},Modifier.fillMaxWidth(),label={Text("Ben, t.ex. 100 eller -50")});OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text("Obligatorisk orsak")});Row{Button(enabled=reason.length>=3&&amount.toLongOrNull()!=null,onClick={scope.launch{runCatching{api.adminAdjustBones(p.playerId,amount.toLong(),reason)}.onSuccess{message="Saldot ändrades";find()}.onFailure{message="Åtgärden misslyckades"}}}){Text("ÄNDRA BEN")};Button(enabled=reason.length>=3,onClick={scope.launch{runCatching{if(p.isSuspended)api.adminUnsuspend(p.playerId,reason) else api.adminSuspend(p.playerId,reason)}.onSuccess{message="Status ändrad";find()}}},modifier=Modifier.padding(start=5.dp)){Text(if(p.isSuspended)"AKTIVERA" else "STÄNG AV")}}};LazyColumn{items(players){p->Row(Modifier.fillMaxWidth().clickable{selected=p}.padding(10.dp)){Text(p.displayName,Modifier.weight(1f),color=PanelCream);Text(p.boneCount.toString(),color=PanelGold)}}}}
+            0->{
+                Row{OutlinedTextField(search,{search=it},Modifier.weight(1f),label={Text("Namn eller UUID")});Button(onClick={find()},modifier=Modifier.padding(start=5.dp)){Text("SÖK")}}
+                val p=selected
+                if(p==null) LazyColumn{items(players){row->Row(Modifier.fillMaxWidth().clickable{selected=row}.padding(10.dp)){Text(row.displayName,Modifier.weight(1f),color=PanelCream);Text(row.boneCount.toString(),color=PanelGold)}}}
+                else LazyColumn(verticalArrangement=Arrangement.spacedBy(5.dp)){item{
+                    Text(p.displayName,color=PanelGold,fontSize=20.sp);Text("${p.boneCount} ben • ${if(p.isSuspended)"avstängd" else "aktiv"}",color=PanelCream)
+                    OutlinedTextField(amount,{amount=it},Modifier.fillMaxWidth(),label={Text("Ben, t.ex. 100 eller -50")})
+                    OutlinedTextField(forcedName,{forcedName=it.take(20)},Modifier.fillMaxWidth(),label={Text("Nytt spelarnamn")})
+                    OutlinedTextField(itemId,{itemId=it},Modifier.fillMaxWidth(),label={Text("Föremåls-ID")})
+                    OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text("Obligatorisk orsak")})
+                    Row{Button(enabled=reason.length>=3&&amount.toLongOrNull()!=null,onClick={scope.launch{runCatching{api.adminAdjustBones(p.playerId,amount.toLong(),reason)}.onSuccess{message="Saldot ändrades";find()}}}){Text("BEN")};Button(enabled=reason.length>=3,onClick={scope.launch{runCatching{if(p.isSuspended)api.adminUnsuspend(p.playerId,reason) else api.adminSuspend(p.playerId,reason)}.onSuccess{message="Status ändrad";find()}}}){Text(if(p.isSuspended)"AKTIVERA" else "STÄNG AV")}}
+                    Button(enabled=reason.length>=3&&GameNameRules.isValidPlayerName(forcedName),onClick={scope.launch{runCatching{api.adminForceName(p.playerId,forcedName,reason)}.onSuccess{message="Namnet ändrades";find()}}}){Text("BYT NAMN")}
+                    Row{Button(enabled=reason.length>=3&&itemId.isNotBlank(),onClick={scope.launch{runCatching{api.adminSetItem(p.playerId,itemId,true,reason)}.onSuccess{message="Föremålet gavs"}}}){Text("GE SAK")};Button(enabled=reason.length>=3&&itemId.isNotBlank(),onClick={scope.launch{runCatching{api.adminSetItem(p.playerId,itemId,false,reason)}.onSuccess{message="Föremålet togs bort"}}}){Text("TA SAK")}}
+                    TextButton(onClick={selected=null}){Text("TILL SPELARLISTAN")}
+                }}
+            }
             1->Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Text("Placera var som helst med koordinater. Varningar kan kringgås av admin.",color=PanelCream);Row{listOf("bone","pile").forEach{x->FilterChip(type==x,{type=x},label={Text(if(x=="bone")"BEN" else "HÖG")},modifier=Modifier.padding(end=5.dp))}};OutlinedTextField(lat,{lat=it},Modifier.fillMaxWidth(),label={Text("Latitud")});OutlinedTextField(lon,{lon=it},Modifier.fillMaxWidth(),label={Text("Longitud")});OutlinedTextField(variant,{variant=it},Modifier.fillMaxWidth(),label={Text(if(type=="bone")"Bentyp 0–11" else "Högtyp 0–4")});OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text("Obligatorisk orsak")});Button(enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={scope.launch{runCatching{api.adminPlaceObject(type,lat.toDouble(),lon.toDouble(),variant.toInt(),reason)}.onSuccess{message="Objektet placerades"}.onFailure{message="Placeringen misslyckades"}}},modifier=Modifier.fillMaxWidth()){Text("PLACERA")}}
             else->LazyColumn{items(audits){a->Column(Modifier.fillMaxWidth().padding(8.dp)){Text(a.action,color=PanelGold,fontWeight=FontWeight.Bold);Text(a.reason,color=PanelCream);Text(a.createdAt,color=PanelCream.copy(alpha=.6f),fontSize=11.sp)}}}
         }

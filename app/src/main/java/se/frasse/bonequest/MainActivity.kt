@@ -111,6 +111,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var profileOpen by remember { mutableStateOf(false) }
     var currentProfile by remember(profile.playerId) { mutableStateOf(profile) }
     var activePanel by remember { mutableStateOf<GamePanel?>(null) }
+    var adminMapMode by remember { mutableStateOf(false) }
+    var adminPlacement by remember { mutableStateOf<GeoPoint?>(null) }
     var collecting by remember { mutableStateOf(false) }
     var lastWorldLoadAt by remember { mutableLongStateOf(0L) }
     var lastWorldCenter by remember { mutableStateOf<GeoPoint?>(null) }
@@ -318,12 +320,16 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     status = "${BONE_NAMES[bone.type.coerceIn(BONE_NAMES.indices)].uppercase()}  •  VÄRDE ${boneValue(bone.type)}  •  ${distance?.let { "$it M" } ?: "OKÄNT AVSTÅND"}"
                 },
                 onPlayerTapped = { activePanel = GamePanel.PROFILE },
+                onEmptyMapTapped = { point -> if(adminMapMode) adminPlacement=point },
+                onHomeTapped = {
+                    status = if (atHome) "Du är hemma – automaten är tillgänglig." else "Ditt hem kan bara användas när du är inom 50 meter."
+                    if (atHome) activePanel = GamePanel.HOME
+                },
                 onPileTapped = onPileTapped@{ pile ->
                     val p = player
                     val d = if (p == null) 9999.0 else distanceMeters(p.latitude,p.longitude,pile.latitude,pile.longitude)
                     selectedPile=pile
                     status="Jordhög • kostar ${pile.cost} ben • ${d.toInt()} m"
-                    return@onPileTapped
                     if (d <= 25.0) {
                         if (worldRepository!=null) scope.launch {
                             runCatching { worldRepository.openPile(pile.id) }.fold(
@@ -353,6 +359,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 onMenu = { menuOpen = true },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
+
+            if(adminMapMode) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=104.dp).zIndex(5f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)) {
+                Row(Modifier.padding(horizontal=12.dp,vertical=7.dp),verticalAlignment=Alignment.CenterVertically){Text("ADMINLÄGE • tryck på kartan för att placera",color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black);TextButton(onClick={adminMapMode=false}){Text("AVSLUTA",color=androidx.compose.ui.graphics.Color.White)}}
+            }
 
             if (!followPlayer) {
                 FloatingActionButton(
@@ -446,9 +456,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 }
             }
             if (statusText != null) {
+                val actionCount=(if(nearBone!=null)1 else 0)+(if(nearPile!=null)1 else 0)+(if(nearShop!=null)1 else 0)+(if(atHome)1 else 0)
                 Surface(
                     modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
-                        .padding(bottom=if (nearBone==null) 10.dp else 94.dp),
+                        .padding(bottom=if(actionCount==0)10.dp else (24+70*actionCount).dp),
                     color = androidx.compose.ui.graphics.Color(0xF2171A1C),
                     shape = RoundedCornerShape(4.dp)
                 ) {
@@ -507,7 +518,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 }==true }
                 GamePanelScreen(
                     panel=panel,profile=currentProfile.copy(boneCount=boneCount.toLong()),api=api,
-                    shopPoi=nearbyShop,poiSettings=poiSettings,onPoiSettings={poiSettings=it},onClose={activePanel=null},
+                    shopPoi=nearbyShop,poiSettings=poiSettings,onPoiSettings={poiSettings=it},onAdminMapMode={adminMapMode=true;activePanel=null},onClose={activePanel=null},
                     onBalance={balance->boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=balance)},
                     onProfile={fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()}
                 )
@@ -516,6 +527,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
         selectedPoi?.let { poi ->
             val distance=player?.let{distanceMeters(it.latitude,it.longitude,poi.latitude,poi.longitude).toInt()}
             AlertDialog(onDismissRequest={selectedPoi=null},title={Text(poi.name?:poiTypeName(poi.poiType))},text={Column(verticalArrangement=Arrangement.spacedBy(5.dp)){Text(poiTypeName(poi.poiType));poi.address?.let{Text(it)};poi.openingHours?.let{Text("Öppet: $it")};poi.phone?.let{Text("Telefon: $it")};poi.website?.let{Text(it,color=androidx.compose.ui.graphics.Color(0xFF5BC8C5))};Text("${distance?:0} m bort");if(poi.hasGameShop)Text("Här finns en spelbutik.",fontWeight=FontWeight.Bold)}},confirmButton={Button(onClick={val uri=Uri.parse("geo:${poi.latitude},${poi.longitude}?q=${poi.latitude},${poi.longitude}(${Uri.encode(poi.name?:"Hundplats")})");context.startActivity(Intent(Intent.ACTION_VIEW,uri));selectedPoi=null}){Text("VÄGBESKRIVNING")}},dismissButton={TextButton(onClick={selectedPoi=null}){Text("STÄNG")}})
+        }
+        adminPlacement?.let { point ->
+            var objectType by remember(point){mutableStateOf("bone")};var variant by remember(point){mutableStateOf("0")};var reason by remember(point){mutableStateOf("Manuell kartplacering")};var busy by remember(point){mutableStateOf(false)}
+            AlertDialog(onDismissRequest={if(!busy)adminPlacement=null},title={Text("Placera spelobjekt")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("${"%.6f".format(point.latitude)}, ${"%.6f".format(point.longitude)}");Row{FilterChip(objectType=="bone",{objectType="bone"},label={Text("BEN")});Spacer(Modifier.width(8.dp));FilterChip(objectType=="pile",{objectType="pile"},label={Text("JORDHÖG")})};OutlinedTextField(variant,{variant=it.filter(Char::isDigit).take(2)},label={Text(if(objectType=="bone")"Bentyp 0–11" else "Högtyp 0–4")});OutlinedTextField(reason,{reason=it},label={Text("Orsak")})}},confirmButton={Button(enabled=!busy&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={busy=true;scope.launch{runCatching{gameApi?.adminPlaceObject(objectType,point.latitude,point.longitude,variant.toInt(),reason)}.onSuccess{status="Adminobjekt placerat";adminPlacement=null}.onFailure{status="Placeringen misslyckades: ${it.message.orEmpty()}";busy=false}}}){Text("PLACERA")}},dismissButton={TextButton(onClick={adminPlacement=null}){Text("AVBRYT")}})
         }
     }
 }
@@ -612,7 +627,7 @@ private fun dirtDrawable(type:Int)=intArrayOf(
 private fun GameMap(
     player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, pois: List<MapPoi>, nearbyPlayers:List<NearbyPlayer>, playerMarkerId:String,home:GeoPoint?, followPlayer: Boolean,
     onManualMove: () -> Unit, onBoundsChanged: (MapBounds) -> Unit, onBoneTapped: (Bone) -> Unit,
-    onPlayerTapped: () -> Unit, onPileTapped: (DirtPile) -> Unit,onPoiTapped:(MapPoi)->Unit, modifier: Modifier
+    onPlayerTapped: () -> Unit,onHomeTapped:()->Unit,onEmptyMapTapped:(GeoPoint)->Unit, onPileTapped: (DirtPile) -> Unit,onPoiTapped:(MapPoi)->Unit, modifier: Modifier
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -621,6 +636,8 @@ private fun GameMap(
     val latestBones by rememberUpdatedState(bones)
     val latestBoneTap by rememberUpdatedState(onBoneTapped)
     val latestPlayerTap by rememberUpdatedState(onPlayerTapped)
+    val latestHomeTap by rememberUpdatedState(onHomeTapped)
+    val latestEmptyMapTap by rememberUpdatedState(onEmptyMapTapped)
     val latestPileTap by rememberUpdatedState(onPileTapped)
     val latestPiles by rememberUpdatedState(piles)
     val latestPois by rememberUpdatedState(pois)
@@ -659,7 +676,7 @@ private fun GameMap(
                     )
                     val features = libreMap.queryRenderedFeatures(
                         hitArea,
-                        *(BONE_LAYER_IDS + PILE_LAYER_IDS + POI_LAYER_IDS + arrayOf(PLAYER_LAYER_ID))
+                        *(BONE_LAYER_IDS + PILE_LAYER_IDS + POI_LAYER_IDS + arrayOf(HOME_LAYER_ID,PLAYER_LAYER_ID))
                     )
                     val boneIds = features.mapNotNull {
                         it.properties()?.get(BONE_ID_PROPERTY)?.asString
@@ -687,7 +704,8 @@ private fun GameMap(
                             val poiIds=features.mapNotNull{it.properties()?.get("poiId")?.asString}.toSet()
                             val tappedPoi=latestPois.firstOrNull{it.poiId in poiIds}
                             if(tappedPoi!=null){latestPoiTap(tappedPoi);true}
-                            else if (features.isNotEmpty()) { latestPlayerTap(); true } else false
+                            else if(libreMap.queryRenderedFeatures(hitArea,HOME_LAYER_ID).isNotEmpty()){latestHomeTap();true}
+                            else if (features.isNotEmpty()) { latestPlayerTap(); true } else {latestEmptyMapTap(GeoPoint(latLng.latitude,latLng.longitude));true}
                         }
                     }
                 }
@@ -750,7 +768,9 @@ private fun GameMap(
     }
 
     LaunchedEffect(map,styleReady,nearbyPlayers) {
-        val source=map?.style?.getSourceAs<GeoJsonSource>(NEARBY_PLAYER_SOURCE_ID)?:return@LaunchedEffect
+        val style=map?.style?:return@LaunchedEffect
+        nearbyPlayers.map{it.markerId}.distinct().forEach{id->style.addImage("nearby-$id",markerBitmap(context,id))}
+        val source=style.getSourceAs<GeoJsonSource>(NEARBY_PLAYER_SOURCE_ID)?:return@LaunchedEffect
         source.setGeoJson(nearbyPlayerFeatureCollection(nearbyPlayers))
     }
     LaunchedEffect(map,styleReady,home){map?.style?.getSourceAs<GeoJsonSource>(HOME_SOURCE_ID)?.setGeoJson(playerFeatureCollection(home))}
@@ -854,7 +874,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
     if(style.getSource(NEARBY_PLAYER_SOURCE_ID)==null) style.addSource(GeoJsonSource(NEARBY_PLAYER_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
     if(style.getLayer(NEARBY_PLAYER_LAYER_ID)==null) style.addLayerBelow(
         SymbolLayer(NEARBY_PLAYER_LAYER_ID,NEARBY_PLAYER_SOURCE_ID).withProperties(
-            PropertyFactory.iconImage(PLAYER_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconImage(Expression.get("markerImage")),PropertyFactory.iconAllowOverlap(true),
             PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(.55f)
         ),PLAYER_LAYER_ID
     )
@@ -889,7 +909,7 @@ private fun pileFeatureCollection(piles: List<DirtPile>): FeatureCollection = Fe
 
 private fun nearbyPlayerFeatureCollection(players:List<NearbyPlayer>):FeatureCollection=FeatureCollection.fromFeatures(
     players.map { player->Feature.fromGeometry(Point.fromLngLat(player.longitude,player.latitude)).apply {
-        addStringProperty("playerId",player.playerId);addNumberProperty("sharedFlocks",player.sharedFlockIds.size)
+        addStringProperty("playerId",player.playerId);addStringProperty("markerImage","nearby-${player.markerId}");addNumberProperty("sharedFlocks",player.sharedFlockIds.size)
     }}
 )
 
