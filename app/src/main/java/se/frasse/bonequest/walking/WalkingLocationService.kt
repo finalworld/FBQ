@@ -73,7 +73,7 @@ class WalkingLocationService : Service() {
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
         if (intent?.action==ACTION_STOP) { stopWalking(); return START_NOT_STICKY }
         startForeground(NOTIFICATION_ID,buildNotification())
-        if(tracking)return START_STICKY
+        if(tracking)return START_NOT_STICKY
         if (ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) {
             stopWalking(); return START_NOT_STICKY
         }
@@ -82,7 +82,9 @@ class WalkingLocationService : Service() {
         fused.requestLocationUpdates(request,callback,mainLooper)
         tracking=true
         serviceScope.launch { syncQueuedBatches() }
-        return START_STICKY
+        // Promenadläget hör till den pågående app-sessionen. Android får
+        // därför inte återstarta tjänsten efter att användaren stängt appen.
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
