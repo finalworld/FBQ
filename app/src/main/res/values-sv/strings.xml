@@ -268,10 +268,6 @@
     <string name="admin_status_suspended">avstängd</string>
     <string name="admin_status_active">aktiv</string>
     <string name="admin_balance_changed">Saldot ändrades.</string>
-    <string name="admin_bone_adjustment">Ändra antal ben</string>
-    <string name="admin_bone_adjustment_help">Skriv 100 för att ge ben eller -50 för att ta bort ben.</string>
-    <string name="admin_action_reason">Orsak (sparas i adminloggen)</string>
-    <string name="admin_save_bone_balance">SPARA BENSALDO</string>
     <string name="admin_status_changed">Status ändrad.</string>
     <string name="admin_activate">AKTIVERA</string>
     <string name="admin_suspend">STÄNG AV</string>
