@@ -37,6 +37,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -133,12 +134,14 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var insideForegroundBoneZone by remember { mutableStateOf(false) }
     var homeInfoOpen by remember { mutableStateOf(false) }
     var pendingPileReward by remember { mutableStateOf<PileResult?>(null) }
+    var pileReelBone by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
     var profileOpen by remember { mutableStateOf(false) }
     var currentProfile by remember(profile.playerId) { mutableStateOf(profile) }
     var activePanel by remember { mutableStateOf<GamePanel?>(null) }
     var adminMapMode by remember { mutableStateOf(false) }
     var adminPlacement by remember { mutableStateOf<GeoPoint?>(null) }
+    var adminDeleteTarget by remember { mutableStateOf<Pair<String,String>?>(null) }
     var collecting by remember { mutableStateOf(false) }
     var collectionGlints by remember { mutableStateOf(emptyList<GeoPoint>()) }
     var lastWorldLoadAt by remember { mutableLongStateOf(0L) }
@@ -385,7 +388,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     }
     LaunchedEffect(pendingPileReward?.claimId){
         val reward=pendingPileReward?:return@LaunchedEffect
-        delay(3000)
+        repeat(15){pileReelBone=(pileReelBone+1)%12;delay(200)}
         status=context.getString(R.string.pile_reward_status,reward.rewardValue,if(reward.isDouble)context.getString(R.string.double_win_suffix) else "")
         pendingPileReward=null
     }
@@ -412,11 +415,13 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     }
                 },
                 onBoneTapped = { bone ->
-                    selectedBone = bone
-                    val distance = player?.let { p ->
-                        distanceMeters(p.latitude, p.longitude, bone.latitude, bone.longitude).toInt()
+                    if(adminMapMode) adminDeleteTarget="bone" to bone.id else {
+                        selectedBone = bone
+                        val distance = player?.let { p ->
+                            distanceMeters(p.latitude, p.longitude, bone.latitude, bone.longitude).toInt()
+                        }
+                        status = context.getString(R.string.bone_tap_info,localizedBoneName(context,bone.type).uppercase(),boneValue(bone.type),distance?.let { context.getString(R.string.distance_meters_short,it) } ?: context.getString(R.string.unknown_distance))
                     }
-                    status = context.getString(R.string.bone_tap_info,localizedBoneName(context,bone.type).uppercase(),boneValue(bone.type),distance?.let { context.getString(R.string.distance_meters_short,it) } ?: context.getString(R.string.unknown_distance))
                 },
                 onPlayerTapped = { activePanel = GamePanel.PROFILE },
                 onEmptyMapTapped = { point -> if(adminMapMode) adminPlacement=point },
@@ -424,12 +429,13 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     homeInfoOpen=true
                 },
                 onPileTapped = onPileTapped@{ pile ->
+                    if(adminMapMode){adminDeleteTarget="pile" to pile.id;return@onPileTapped}
                     val p = player
                     val d = if (p == null) 9999.0 else distanceMeters(p.latitude,p.longitude,pile.latitude,pile.longitude)
                     selectedPile=pile
                     status=context.getString(R.string.pile_map_info,pile.cost,d.toInt())
                 },
-                onPoiTapped={selectedPoi=it},
+                onPoiTapped={poi->if(adminMapMode)adminDeleteTarget="poi" to poi.poiId else selectedPoi=poi},
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -539,7 +545,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             }
             pendingPileReward?.let { reward->
                 Surface(Modifier.align(Alignment.Center).padding(24.dp),color=androidx.compose.ui.graphics.Color(0xF21A2022),shape=RoundedCornerShape(8.dp)){
-                    Column(Modifier.padding(22.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(stringResource(R.string.ui_text_032),color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=24.sp,fontWeight=FontWeight.Black);Text(stringResource(R.string.ui_text_091),fontSize=28.sp);LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical=12.dp));TextButton(onClick={status=context.getString(R.string.pile_reward_status,reward.rewardValue,if(reward.isDouble)context.getString(R.string.double_win_suffix) else "");pendingPileReward=null}){Text(stringResource(R.string.ui_text_030))}}
+                    Column(Modifier.padding(14.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(stringResource(R.string.ui_text_032),color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=22.sp,fontWeight=FontWeight.Black);DogBoneSlotMachine(pileReelBone,"Vinst minst ${reward.cost} ben",true,Modifier.widthIn(max=390.dp));LinearProgressIndicator(Modifier.fillMaxWidth().padding(top=8.dp));TextButton(onClick={status=context.getString(R.string.pile_reward_status,reward.rewardValue,if(reward.isDouble)context.getString(R.string.double_win_suffix) else "");pendingPileReward=null}){Text(stringResource(R.string.ui_text_030))}}
                 }
             }
             pileToConfirm?.let{pile->
@@ -588,16 +594,22 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { (context as? Activity)?.finishAffinity() }) { Text(stringResource(R.string.ui_text_065)) }
+                    TextButton(onClick = { WalkingServiceController.stop(context);(context as? Activity)?.finishAffinity() }) { Text(stringResource(R.string.ui_text_065)) }
                 },
                 dismissButton = { TextButton(onClick = { menuOpen = false }) { Text(stringResource(R.string.ui_text_077)) } }
             )
         }
         if (menuOpen && gameApi != null) {
+            val nearbyShop=mapPois.firstOrNull { poi -> poi.hasGameShop && player?.let { p ->
+                distanceMeters(p.latitude,p.longitude,poi.latitude,poi.longitude)<=50
+            }==true }
             GameMenu(
                 profile=currentProfile.copy(boneCount=boneCount.toLong()),
-                onClose={menuOpen=false},onOpen={activePanel=it;menuOpen=false},
-                onQuit={(context as? Activity)?.finishAffinity()}
+                api=gameApi,shopPoi=nearbyShop,poiSettings=poiSettings,onPoiSettings={poiSettings=it},serverActionsEnabled=isOnline,
+                onAdminMapMode={adminMapMode=true},onClose={menuOpen=false},
+                onBalance={balance->boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=balance)},
+                onProfile={fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()},
+                onQuit={WalkingServiceController.stop(context);(context as? Activity)?.finishAffinity()}
             )
         }
         activePanel?.let { panel ->
@@ -637,6 +649,28 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 val request=if(objectType=="shop")runCatching{gameApi?.adminUpsertPoi(null,"pet_shop",shopName,point.latitude,point.longitude,true,reason)} else runCatching{gameApi?.adminPlaceObject(objectType,point.latitude,point.longitude,variant.toInt(),reason)}
                 request.onSuccess{status=context.getString(R.string.admin_object_placed_status);adminPlacement=null}.onFailure{status=context.getString(R.string.admin_place_failed_status,it.message.orEmpty());busy=false}
             }}}){Text(stringResource(if(confirmed)R.string.admin_place_anyway else R.string.admin_preview_update))}},dismissButton={TextButton(onClick={adminPlacement=null}){Text(stringResource(R.string.ui_text_006))}})
+        }
+        adminDeleteTarget?.let{target->
+            var deleteReason by remember(target){mutableStateOf("Manuell borttagning från kartan")}
+            var deletingObject by remember(target){mutableStateOf(false)}
+            AlertDialog(
+                onDismissRequest={if(!deletingObject)adminDeleteTarget=null},
+                title={Text("Ta bort kartobjekt?")},
+                text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+                    Text("Typ: ${when(target.first){"bone"->"Ben";"pile"->"Jordhög";else->"Plats/butik"}}")
+                    Text("ID: ${target.second}",fontSize=11.sp)
+                    OutlinedTextField(deleteReason,{deleteReason=it},Modifier.fillMaxWidth(),label={Text("Orsak")})
+                    Text("Objektet tas bort från alla spelares kartor.",color=androidx.compose.ui.graphics.Color(0xFFFFC85B))
+                }},
+                confirmButton={Button(enabled=!deletingObject&&deleteReason.trim().length>=3,onClick={deletingObject=true;scope.launch{
+                    val result=if(target.first=="poi")runCatching{gameApi?.adminDeletePoi(target.second,deleteReason)}else runCatching{gameApi?.adminDeleteWorldObject(target.second,target.first,deleteReason)}
+                    result.onSuccess{
+                        when(target.first){"bone"->bones=bones.filterNot{it.id==target.second};"pile"->piles=piles.filterNot{it.id==target.second};else->mapPois=mapPois.filterNot{it.poiId==target.second}}
+                        status="Objektet togs bort.";adminDeleteTarget=null
+                    }.onFailure{status="Objektet kunde inte tas bort: ${it.message.orEmpty()}";deletingObject=false}
+                }}){Text("TA BORT")}},
+                dismissButton={TextButton(enabled=!deletingObject,onClick={adminDeleteTarget=null}){Text("AVBRYT")}}
+            )
         }
     }
 }
@@ -684,14 +718,8 @@ private fun TopHud(count:Int,totalMeters:Long,onMenu:()->Unit,modifier:Modifier=
 
 @Composable private fun SpikedHudStat(icon:Int,value:String){
     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-        Box(
-            Modifier.size(29.dp).background(
-                androidx.compose.ui.graphics.Color(0xFF171A19),RoundedCornerShape(3.dp)
-            ),
-            contentAlignment=Alignment.Center
-        ) {
-            Image(painterResource(icon),null,Modifier.size(22.dp),contentScale=ContentScale.Fit)
-        }
+        if(icon==R.drawable.marker_default_paw) Text("👣",Modifier.size(29.dp).padding(2.dp).graphicsLayer(rotationZ=45f),fontSize=20.sp)
+        else Image(painterResource(icon),null,Modifier.size(27.dp),contentScale=ContentScale.Fit)
         Text(
             value,
             Modifier.weight(1f).padding(start=8.dp),
@@ -1050,7 +1078,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
     val pileDrawables = intArrayOf(R.drawable.dirt_pile_01,R.drawable.dirt_pile_02,R.drawable.dirt_pile_03,R.drawable.dirt_pile_04,R.drawable.dirt_pile_05)
     pileDrawables.forEachIndexed { index, id -> BitmapFactory.decodeResource(context.resources,id)?.let { style.addImage(PILE_IMAGE_IDS[index],it) } }
     if (style.getSource(PILE_SOURCE_ID)==null) style.addSource(GeoJsonSource(PILE_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
-    PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.72f)),PLAYER_LAYER_ID) }
+    PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.84f)),PLAYER_LAYER_ID) }
 
     val poiDrawables = intArrayOf(R.drawable.poi_dog_park, R.drawable.poi_pet_shop, R.drawable.poi_veterinary, R.drawable.poi_grooming)
     poiDrawables.forEachIndexed { index, id ->
@@ -1252,9 +1280,18 @@ private fun markerAtlasIndex(id:String):Int? {
         id.startsWith("marker_breed_")->suffix("marker_breed_")?.takeIf{it in 0..35}
         id.startsWith("marker_toy_")->suffix("marker_toy_")?.takeIf{it in 0..19}?.plus(40)
         id.startsWith("marker_paw_")->suffix("marker_paw_")?.takeIf{it in 0..11}?.plus(60)
-        id.startsWith("marker_tag_")->suffix("marker_tag_")?.takeIf{it in 0..9}?.plus(72)
-        id.startsWith("marker_gear_")->suffix("marker_gear_")?.takeIf{it in 0..7}?.plus(82)
-        id.startsWith("marker_emblem_")->suffix("marker_emblem_")?.takeIf{it in 0..9}?.plus(90)
+        // Atlasens sista rader är inte ordnade som katalogens databas-ID:n.
+        // Mappa bara celler som faktiskt föreställer rätt sorts föremål;
+        // övriga får den centrerade procedurgrafiken nedan i markerBitmap.
+        id.startsWith("marker_tag_")->suffix("marker_tag_")?.takeIf{it in 0..7}?.plus(72)
+        id.startsWith("marker_gear_")->when(suffix("marker_gear_")){
+            0->77 // rullkoppel
+            1->41 // repknut/rep-koppel
+            2,3->78 // sele
+            4->79 // ryggsäck
+            else->null
+        }
+        id.startsWith("marker_emblem_")->suffix("marker_emblem_")?.takeIf{it in 0..9}?.plus(80)
         else->null
     }
 }

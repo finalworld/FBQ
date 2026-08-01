@@ -30,4 +30,15 @@ class DistanceFilterTest {
         val filter=DistanceFilter(); filter.add(sample(59.33,18.06,0))
         assertNull(filter.add(sample(59.3301,18.06,180_000)))
     }
+
+    @Test fun rejectsStationaryAccuracyDrift() {
+        val filter=DistanceFilter(); filter.add(sample(59.33,18.06,0,12f,0f))
+        assertNull(filter.add(sample(59.33008,18.06,10_000,12f,0f)))
+        assertNull(filter.add(sample(59.32994,18.06002,20_000,15f,0f)))
+    }
+
+    @Test fun rejectsTooRapidSamples() {
+        val filter=DistanceFilter();filter.add(sample(59.33,18.06,0,3f))
+        assertNull(filter.add(sample(59.3301,18.06,500,3f)))
+    }
 }

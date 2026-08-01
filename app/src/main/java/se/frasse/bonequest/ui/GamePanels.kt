@@ -44,30 +44,53 @@ private val PanelCream=Color(0xFFFFE5B0)
 private val PanelTeal=Color(0xFF168D8A)
 
 @Composable fun GameMenu(
-    profile:SessionBootstrap,onClose:()->Unit,onOpen:(GamePanel)->Unit,onQuit:()->Unit
+    profile:SessionBootstrap,api:GameApiRepository,shopPoi:MapPoi?=null,
+    poiSettings:PoiSettings=PoiSettings(),onPoiSettings:(PoiSettings)->Unit={},
+    serverActionsEnabled:Boolean=true,onAdminMapMode:()->Unit={},onClose:()->Unit,
+    onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit,onQuit:()->Unit
 ) {
+    var panel by remember { mutableStateOf(GamePanel.PROFILE) }
     Surface(Modifier.fillMaxSize(),color=Color(0xF7171B1D)) {
         Row(Modifier.statusBarsPadding().navigationBarsPadding()) {
-            Column(Modifier.width(104.dp).fillMaxHeight().background(Color(0xFF111719)).padding(top=18.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-                Text(stringResource(R.string.ui_text_019),color=PanelGold,fontWeight=FontWeight.Black,fontSize=17.sp)
-                Spacer(Modifier.height(18.dp))
-                MenuTile("🐾",stringResource(R.string.menu_profile)) { onOpen(GamePanel.PROFILE) }
-                MenuTile("🦴",stringResource(R.string.menu_collection)) { onOpen(GamePanel.COLLECTION) }
-                MenuTile("🎒",stringResource(R.string.menu_equipment)) { onOpen(GamePanel.EQUIPMENT) }
-                MenuTile("🐕",stringResource(R.string.menu_flocks)) { onOpen(GamePanel.FLOCKS) }
-                MenuTile("🏠",stringResource(R.string.menu_home)) { onOpen(GamePanel.HOME) }
-                MenuTile("⚙",stringResource(R.string.menu_settings)) { onOpen(GamePanel.SETTINGS) }
-                if(profile.isAdmin) MenuTile("★",stringResource(R.string.menu_admin)) { onOpen(GamePanel.ADMIN) }
-            }
-            Column(Modifier.weight(1f).fillMaxHeight().padding(18.dp)) {
-                Row(verticalAlignment=Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) { Text(profile.displayName,color=PanelGold,fontSize=27.sp,fontWeight=FontWeight.Black);Text(stringResource(R.string.bone_balance_format,profile.boneCount),color=PanelCream) }
-                    TextButton(onClick=onClose){Text(stringResource(R.string.ui_text_064))}
+            Column(Modifier.width(112.dp).fillMaxHeight().background(Color(0xFF111719)).padding(top=10.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                Row(Modifier.fillMaxWidth().clickable(onClick=onClose).padding(horizontal=10.dp,vertical=9.dp),verticalAlignment=Alignment.CenterVertically){
+                    Text("☰",color=PanelGold,fontWeight=FontWeight.Black,fontSize=26.sp)
+                    Text("Stäng",Modifier.padding(start=7.dp),color=PanelCream,fontWeight=FontWeight.Bold,fontSize=12.sp)
                 }
-                HorizontalDivider(color=PanelGold.copy(alpha=.6f));Spacer(Modifier.height(18.dp))
-                Text(stringResource(R.string.ui_text_023),fontSize=22.sp,fontWeight=FontWeight.Bold,color=PanelCream)
-                Text(stringResource(R.string.ui_text_081),color=PanelCream.copy(alpha=.7f))
-                Spacer(Modifier.weight(1f));TextButton(onClick=onQuit){Text(stringResource(R.string.ui_text_065))}
+                Spacer(Modifier.height(8.dp))
+                MenuTile("🐾",stringResource(R.string.menu_profile)) { panel=GamePanel.PROFILE }
+                MenuTile("🦴",stringResource(R.string.menu_collection)) { panel=GamePanel.COLLECTION }
+                MenuTile("🎒",stringResource(R.string.menu_equipment)) { panel=GamePanel.EQUIPMENT }
+                MenuTile("🐕",stringResource(R.string.menu_flocks)) { panel=GamePanel.FLOCKS }
+                MenuTile("🏠",stringResource(R.string.menu_home)) { panel=GamePanel.HOME }
+                MenuTile("⚙",stringResource(R.string.menu_settings)) { panel=GamePanel.SETTINGS }
+                if(profile.isAdmin) MenuTile("★",stringResource(R.string.menu_admin)) { panel=GamePanel.ADMIN }
+                Spacer(Modifier.weight(1f))
+                Column(Modifier.fillMaxWidth().clickable(onClick=onQuit).padding(vertical=12.dp),horizontalAlignment=Alignment.CenterHorizontally){
+                    Text("⏻",color=Color(0xFFFF6B5D),fontSize=30.sp,fontWeight=FontWeight.Black)
+                    Text("Stäng appen",color=PanelCream,fontSize=10.sp,textAlign=TextAlign.Center)
+                }
+            }
+            Column(Modifier.weight(1f).fillMaxHeight().padding(14.dp)) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text(stringResource(panelTitleResource(panel)),Modifier.weight(1f),color=PanelGold,fontSize=22.sp,fontWeight=FontWeight.Black)
+                    Text(stringResource(R.string.panel_bone_balance,profile.boneCount),color=PanelCream,fontWeight=FontWeight.Bold)
+                }
+                HorizontalDivider(color=PanelGold.copy(alpha=.6f));Spacer(Modifier.height(10.dp))
+                Box(Modifier.fillMaxSize()){
+                    if(!serverActionsEnabled&&panel in setOf(GamePanel.EQUIPMENT,GamePanel.FLOCKS,GamePanel.HOME,GamePanel.ADMIN,GamePanel.SHOP)){
+                        Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text(stringResource(R.string.ui_text_048),color=Color(0xFFFF6B5D),fontSize=22.sp,fontWeight=FontWeight.Black);Text(stringResource(R.string.ui_text_014),color=PanelCream,textAlign=TextAlign.Center)}
+                    } else when(panel){
+                        GamePanel.PROFILE->ProfilePanel(profile,api,onProfile){panel=GamePanel.COLLECTION}
+                        GamePanel.COLLECTION->CollectionPanel(api)
+                        GamePanel.EQUIPMENT->EquipmentPanel(api,onProfile)
+                        GamePanel.FLOCKS->FlocksPanel(api,onBalance)
+                        GamePanel.HOME->HomePanel(profile,api,onBalance,onProfile)
+                        GamePanel.SETTINGS->SettingsPanel(profile,api,poiSettings,onPoiSettings,onProfile)
+                        GamePanel.SHOP->ShopPanel(profile,api,shopPoi,onBalance)
+                        GamePanel.ADMIN->AdminPanel(api){onAdminMapMode();onClose()}
+                    }
+                }
             }
         }
     }
@@ -120,13 +143,20 @@ private fun panelTitleResource(p:GamePanel)=when(p){
 
 @Composable private fun ProfilePanel(profile:SessionBootstrap,api:GameApiRepository,onProfile:(SessionBootstrap)->Unit,onCollection:()->Unit) {
     val scope=rememberCoroutineScope();var edit by remember{mutableStateOf(false)};var name by remember{mutableStateOf(profile.displayName)};var message by remember{mutableStateOf<String?>(null)}
+    var markerName by remember(profile.activeMarkerId){mutableStateOf(humanizeMarkerId(profile.activeMarkerId))}
+    LaunchedEffect(profile.activeMarkerId){markerName=runCatching{api.catalog().firstOrNull{it.itemId==profile.activeMarkerId}?.nameSv}.getOrNull()?:humanizeMarkerId(profile.activeMarkerId)}
     LazyColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        item { StatCard(stringResource(R.string.profile_game_name),profile.displayName);StatCard(stringResource(R.string.profile_member_label),profile.createdAt.take(10));StatCard(stringResource(R.string.profile_balance_label),profile.boneCount.toString());StatCard(stringResource(R.string.profile_walked_label),stringResource(R.string.profile_km_value,profile.totalMeters/1000.0));StatCard(stringResource(R.string.profile_bones_found_label),profile.totalBones.toString());StatCard(stringResource(R.string.profile_piles_label),profile.totalPiles.toString());StatCard(stringResource(R.string.profile_active_marker_label),profile.activeMarkerId) }
+        item { StatCard(stringResource(R.string.profile_game_name),profile.displayName);StatCard(stringResource(R.string.profile_member_label),profile.createdAt.take(10));StatCard(stringResource(R.string.profile_balance_label),profile.boneCount.toString());StatCard(stringResource(R.string.profile_walked_label),stringResource(R.string.profile_km_value,profile.totalMeters/1000.0));StatCard(stringResource(R.string.profile_bones_found_label),profile.totalBones.toString());StatCard(stringResource(R.string.profile_piles_label),profile.totalPiles.toString());StatCard(stringResource(R.string.profile_active_marker_label),markerName) }
         item { Button(onClick={edit=!edit},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_082))} }
         item { OutlinedButton(onClick=onCollection,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_084))} }
         if(edit) item { OutlinedTextField(name,{name=it.take(20)},Modifier.fillMaxWidth(),singleLine=true);Button(enabled=GameNameRules.isValidPlayerName(name),onClick={scope.launch{runCatching{api.changeName(name);api.bootstrap()}.onSuccess{onProfile(it);edit=false}.onFailure{message=it.message}}}){Text(stringResource(R.string.ui_text_062))}}
         message?.let { item { Text(it,color=PanelGold) } }
     }
+}
+
+private fun humanizeMarkerId(id:String)=when(id){
+    "marker_default_paw"->"Standardtass";"marker_frasse_mythic"->"Frasse"
+    else->id.removePrefix("marker_").replace('_',' ').replaceFirstChar{if(it.isLowerCase())it.titlecase() else it.toString()}
 }
 
 @Composable private fun StatCard(label:String,value:String) { Row(Modifier.fillMaxWidth().padding(vertical=7.dp)){Text(label,Modifier.weight(1f),color=PanelCream.copy(alpha=.7f));Text(value,color=PanelCream,fontWeight=FontWeight.Bold)} }
@@ -157,14 +187,35 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 
 @Composable private fun HomePanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit){
     val context=LocalContext.current;val scope=rememberCoroutineScope();var message by remember{mutableStateOf(context.getString(R.string.home_slot_intro))};var pending by remember{mutableStateOf<SlotResult?>(null)};var revealed by remember{mutableStateOf(true)};var error by remember{mutableStateOf(false)}
+    var reelBone by remember{mutableIntStateOf(0)}
     fun reveal(){pending?.let{r->message=if(r.payout==0)context.getString(R.string.slot_loss) else context.getString(R.string.slot_win,r.payout,r.multiplier.toString());onBalance(r.balance)};revealed=true;pending=null}
-    LaunchedEffect(pending?.spinId){if(pending!=null){delay(5000);reveal()}}
+    LaunchedEffect(pending?.spinId){if(pending!=null){repeat(25){reelBone=(reelBone+1)%12;delay(200)};reveal()}}
     Column(verticalArrangement=Arrangement.spacedBy(13.dp)){
         Text(stringResource(if(profile.homeLat==null)R.string.home_not_set else R.string.home_saved_map),color=PanelCream,fontSize=18.sp)
         Button(enabled=pending==null,onClick={scope.launch{runCatching{api.setHome()}.onSuccess{message=context.getString(R.string.home_saved_cooldown);onProfile(api.bootstrap())}.onFailure{message=context.getString(R.string.home_move_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_068))}
         HorizontalDivider();Text(stringResource(R.string.ui_text_020),color=PanelGold,fontWeight=FontWeight.Black,fontSize=20.sp);Text(message,color=if(error)Color(0xFFFF6B5D) else PanelCream)
+        DogBoneSlotMachine(reelBone,"Insats 1 · 2 · 5 · 10",pending!=null)
         if(pending==null)Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){listOf(1,2,5,10).forEach{stake->Button(onClick={scope.launch{error=false;runCatching{api.spinHome(stake)}.onSuccess{pending=it;revealed=false;message=context.getString(R.string.slot_spinning)}.onFailure{error=true;message=context.getString(R.string.slot_unavailable)}}}){Text(stake.toString())}}}
-        else Column(horizontalAlignment=Alignment.CenterHorizontally){LinearProgressIndicator(Modifier.fillMaxWidth(),color=PanelGold);Spacer(Modifier.height(12.dp));Text(stringResource(R.string.ui_text_090),fontSize=27.sp);TextButton(onClick={reveal()}){Text(stringResource(R.string.ui_text_030))}}
+        else Column(horizontalAlignment=Alignment.CenterHorizontally){LinearProgressIndicator(Modifier.fillMaxWidth(),color=PanelGold);TextButton(onClick={reveal()}){Text(stringResource(R.string.ui_text_030))}}
+    }
+}
+
+@Composable internal fun DogBoneSlotMachine(boneType:Int,information:String,spinning:Boolean,modifier:Modifier=Modifier){
+    Row(modifier.fillMaxWidth().height(176.dp).background(Color(0xFF3A2519),RoundedCornerShape(8.dp)).padding(7.dp),verticalAlignment=Alignment.CenterVertically){
+        Column(Modifier.width(82.dp).fillMaxHeight().background(Color(0xFF171B1D),RoundedCornerShape(4.dp)).padding(7.dp),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){
+            Text("VINST",color=PanelGold,fontWeight=FontWeight.Black,fontSize=12.sp)
+            Text(information,color=PanelCream,fontSize=10.sp,textAlign=TextAlign.Center)
+        }
+        Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal=7.dp),horizontalAlignment=Alignment.CenterHorizontally){
+            Text("🐾",fontSize=28.sp)
+            Box(Modifier.weight(1f).fillMaxWidth().background(Color(0xFFFFF2D2),RoundedCornerShape(5.dp)),contentAlignment=Alignment.Center){
+                Image(painterResource(boneDrawable(boneType)),null,Modifier.size(if(spinning)82.dp else 76.dp),contentScale=ContentScale.Fit)
+            }
+            Text(if(spinning)"RULLAR…" else "FRASSES BENAUTOMAT",color=PanelGold,fontSize=10.sp,fontWeight=FontWeight.Black)
+        }
+        Column(Modifier.width(30.dp),horizontalAlignment=Alignment.CenterHorizontally){
+            Box(Modifier.width(7.dp).height(72.dp).background(PanelGold));Box(Modifier.size(24.dp).background(Color(0xFFD94B36),RoundedCornerShape(50)))
+        }
     }
 }
 
@@ -206,6 +257,7 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
     var members by remember{mutableStateOf<List<FlockMember>>(emptyList())}
     var applications by remember{mutableStateOf<List<FlockApplication>>(emptyList())}
     var ledger by remember{mutableStateOf<List<FlockLedgerEntry>>(emptyList())}
+    var contributions by remember{mutableStateOf<List<FlockContribution>>(emptyList())}
     var tab by remember{mutableIntStateOf(0)}
     var detailTab by remember{mutableIntStateOf(0)}
     var name by remember{mutableStateOf("")}
@@ -218,6 +270,9 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
     suspend fun reloadDetail(f:MyFlock){
         members=api.members(f.flockId)
         ledger=api.ledger(f.flockId)
+        contributions=runCatching{api.contributionLeaderboard(f.flockId)}.getOrElse{
+            ledger.filter{it.amount>0}.groupBy{it.actorName}.map{(actor,entries)->FlockContribution("",actor,entries.sumOf{it.amount}.toLong())}.sortedWith(compareByDescending<FlockContribution>{it.totalContributed}.thenBy{it.displayName.lowercase()})
+        }
         applications=if(f.myRole in listOf("leader","guard")) runCatching{api.applications(f.flockId)}.getOrDefault(emptyList()) else emptyList()
         selected=api.myFlocks().firstOrNull{it.flockId==f.flockId}?:f
     }
@@ -238,7 +293,9 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
             when(detailTab){
                 0->LazyColumn{items(members){m->Column(Modifier.fillMaxWidth().background(Color(0xFF20282A)).padding(10.dp)){Text(m.displayName,color=PanelCream,fontWeight=FontWeight.Bold);Text(stringResource(R.string.flock_member_summary,localizedRoleName(m.role,context),m.totalMeters/1000.0,m.boneBalance,m.totalBones,m.totalPiles),color=PanelGold,fontSize=11.sp);if(flock.myRole=="leader"&&m.role!="leader")Row{TextButton(onClick={scope.launch{runCatching{api.setGuard(flock.flockId,m.playerId,m.role!="guard")}.onSuccess{reloadDetail(flock)}}}){Text(stringResource(if(m.role=="guard")R.string.flock_make_member else R.string.flock_make_guard))};TextButton(onClick={scope.launch{runCatching{api.transfer(flock.flockId,m.playerId)}.onSuccess{reloadLists();selected=null}}}){Text(stringResource(R.string.ui_text_029))}};if((flock.myRole=="leader"&&m.role!="leader")||(flock.myRole=="guard"&&m.role=="member"))TextButton(onClick={scope.launch{runCatching{api.kick(flock.flockId,m.playerId)}.onSuccess{reloadDetail(flock)}}}){Text(stringResource(R.string.ui_text_063),color=Color(0xFFFF6B5D))}}}}
                 1->if(flock.myRole !in listOf("leader","guard"))Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(stringResource(R.string.ui_text_018),color=PanelCream)}else LazyColumn{items(applications){a->Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically){Text(a.displayName,Modifier.weight(1f),color=PanelCream);TextButton(onClick={scope.launch{runCatching{api.decideApplication(flock.flockId,a.playerId,true)}.onSuccess{reloadDetail(flock)}}}){Text(stringResource(R.string.ui_text_026))};TextButton(onClick={scope.launch{runCatching{api.decideApplication(flock.flockId,a.playerId,false)}.onSuccess{reloadDetail(flock)}}}){Text(stringResource(R.string.ui_text_043))}}}}
-                2->LazyColumn{item{Text(stringResource(R.string.ui_text_021).format(flock.bankBalance),color=PanelGold,fontSize=20.sp,fontWeight=FontWeight.Bold);Text(stringResource(R.string.ui_text_002),color=PanelCream,fontSize=12.sp)};items(ledger){e->Row(Modifier.fillMaxWidth().padding(vertical=7.dp)){Column(Modifier.weight(1f)){Text(e.actorName,color=PanelCream);Text(e.reason,color=PanelCream.copy(alpha=.6f),fontSize=11.sp);Text(shortTimestamp(e.createdAt),color=PanelCream.copy(alpha=.45f),fontSize=10.sp)};Text(stringResource(R.string.ui_text_001).format(e.amount),color=if(e.amount>=0)PanelTeal else Color(0xFFFF6B5D),fontWeight=FontWeight.Bold)}}}
+                2->{
+                    LazyColumn{item{Text(stringResource(R.string.ui_text_021).format(flock.bankBalance),color=PanelGold,fontSize=20.sp,fontWeight=FontWeight.Bold);Text("Medlemmarnas sammanlagda bidrag",color=PanelCream,fontSize=12.sp)};items(contributions){entry->val position=contributions.indexOf(entry)+1;Row(Modifier.fillMaxWidth().padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically){Text("$position.",Modifier.width(30.dp),color=PanelGold,fontWeight=FontWeight.Black);Text(entry.displayName,Modifier.weight(1f),color=PanelCream,fontWeight=FontWeight.Bold);Text("${entry.totalContributed} ben",color=PanelTeal,fontWeight=FontWeight.Black)}}}
+                }
                 else->Column(verticalArrangement=Arrangement.spacedBy(9.dp)){if(flock.myRole=="leader"){Text(stringResource(R.string.ui_text_013),color=PanelCream);OutlinedTextField(name,{name=it.take(24)},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_047))});Button(onClick={scope.launch{runCatching{api.renameFlock(flock.flockId,name)}.onSuccess{message=context.getString(R.string.flock_renamed);reloadLists();reloadDetail(flock)}.onFailure{message=context.getString(R.string.flock_rename_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_011))};Text(stringResource(R.string.ui_text_085),color=PanelCream,fontSize=12.sp);if(flock.memberCount==1L)TextButton(onClick={confirmDelete=true}){Text(stringResource(R.string.ui_text_073),color=Color(0xFFFF6B5D))}}else Button(onClick={scope.launch{runCatching{api.leave(flock.flockId)}.onSuccess{selected=null;reloadLists()}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_039))}}
             }
         }
@@ -296,7 +353,7 @@ private fun shortTimestamp(value:String)=runCatching{java.time.Instant.parse(val
                     OutlinedTextField(forcedName,{forcedName=it.take(20)},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_046))})
                     OutlinedTextField(itemId,{itemId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_024))})
                     OutlinedTextField(playerReason,{playerReason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.admin_action_reason))},singleLine=true)
-                    Button(enabled=playerReason.length>=3&&amount.toLongOrNull()!=null,onClick={scope.launch{runCatching{api.adminAdjustBones(p.playerId,amount.toLong(),playerReason)}.onSuccess{message=context.getString(R.string.admin_balance_changed);players=api.adminPlayers(search);selected=players.firstOrNull{it.playerId==p.playerId};amount=""}.onFailure{message="Kunde inte ändra ben: ${it.message.orEmpty()}"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.admin_save_bone_balance))}
+                    Button(enabled=playerReason.trim().length>=3&&amount.toLongOrNull()?.let{it!=0L&&p.boneCount+it>=0}==true,onClick={scope.launch{runCatching{api.adminAdjustBones(p.playerId,amount.toLong(),playerReason.trim())}.onSuccess{newBalance->message="Bensaldot sparades: $newBalance ben";selected=p.copy(boneCount=newBalance);players=players.map{if(it.playerId==p.playerId)it.copy(boneCount=newBalance)else it};amount=""}.onFailure{message="Kunde inte ändra ben: ${it.message.orEmpty()}"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.admin_save_bone_balance))}
                     Button(enabled=playerReason.length>=3,onClick={scope.launch{runCatching{if(p.isSuspended)api.adminUnsuspend(p.playerId,playerReason) else api.adminSuspend(p.playerId,playerReason)}.onSuccess{message=context.getString(R.string.admin_status_changed);players=api.adminPlayers(search);selected=players.firstOrNull{it.playerId==p.playerId}}.onFailure{message="Adminåtgärden misslyckades: ${it.message.orEmpty()}"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(if(p.isSuspended)R.string.admin_activate else R.string.admin_suspend))}
                     Button(enabled=playerReason.length>=3&&GameNameRules.isValidPlayerName(forcedName),onClick={scope.launch{runCatching{api.adminForceName(p.playerId,forcedName,playerReason)}.onSuccess{message=context.getString(R.string.admin_name_changed);players=api.adminPlayers(search);selected=players.firstOrNull{it.playerId==p.playerId}}.onFailure{message="Kunde inte ändra namn: ${it.message.orEmpty()}"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_011))}
                     Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){Button(enabled=playerReason.length>=3&&itemId.isNotBlank(),onClick={scope.launch{runCatching{api.adminSetItem(p.playerId,itemId,true,playerReason)}.onSuccess{message=context.getString(R.string.admin_item_granted)}.onFailure{message="Kunde inte ge föremålet: ${it.message.orEmpty()}"}}}){Text(stringResource(R.string.ui_text_025))};Button(enabled=playerReason.length>=3&&itemId.isNotBlank(),onClick={scope.launch{runCatching{api.adminSetItem(p.playerId,itemId,false,playerReason)}.onSuccess{message=context.getString(R.string.admin_item_removed)}.onFailure{message="Kunde inte ta bort föremålet: ${it.message.orEmpty()}"}}}){Text(stringResource(R.string.ui_text_074))}}

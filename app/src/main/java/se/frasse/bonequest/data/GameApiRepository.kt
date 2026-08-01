@@ -56,6 +56,10 @@ import java.util.UUID
     val amount:Double,@SerialName("balance_after") val balanceAfter:Double,val reason:String,
     @SerialName("created_at") val createdAt:String
 )
+@Serializable data class FlockContribution(
+    @SerialName("player_id") val playerId:String,@SerialName("display_name") val displayName:String,
+    @SerialName("total_contributed") val totalContributed:Long
+)
 @Serializable data class AdminPlayer(
     @SerialName("player_id") val playerId:String,@SerialName("display_name") val displayName:String,
     @SerialName("bone_count") val boneCount:Long,@SerialName("is_suspended") val isSuspended:Boolean,
@@ -103,6 +107,7 @@ class GameApiRepository(private val client:SupabaseClient) {
     suspend fun members(id:String):List<FlockMember> = client.postgrest.rpc("get_flock_members",buildJsonObject { put("p_flock_id",id) }).decodeList()
     suspend fun applications(id:String):List<FlockApplication> = client.postgrest.rpc("get_flock_applications",buildJsonObject { put("p_flock_id",id) }).decodeList()
     suspend fun ledger(id:String):List<FlockLedgerEntry> = client.postgrest.rpc("get_flock_ledger",buildJsonObject { put("p_flock_id",id);put("p_limit",100) }).decodeList()
+    suspend fun contributionLeaderboard(id:String):List<FlockContribution> = client.postgrest.rpc("get_flock_contribution_leaderboard",buildJsonObject { put("p_flock_id",id) }).decodeList()
     suspend fun decideApplication(flockId:String,playerId:String,approve:Boolean) = client.postgrest.rpc("decide_flock_application",buildJsonObject {
         put("p_flock_id",flockId);put("p_applicant_id",playerId);put("p_approve",approve)
     })
@@ -115,7 +120,7 @@ class GameApiRepository(private val client:SupabaseClient) {
     suspend fun renameFlock(flockId:String,name:String) = client.postgrest.rpc("rename_flock",buildJsonObject { put("p_flock_id",flockId);put("p_new_name",name) })
     suspend fun deleteFlock(flockId:String,confirmation:String) = client.postgrest.rpc("delete_empty_flock",buildJsonObject { put("p_flock_id",flockId);put("p_confirmation_name",confirmation) })
     suspend fun adminPlayers(search:String=""):List<AdminPlayer> = client.postgrest.rpc("admin_search_players",buildJsonObject { put("p_search",search) }).decodeList()
-    suspend fun adminAdjustBones(playerId:String,amount:Long,reason:String) = client.postgrest.rpc("admin_adjust_bones",buildJsonObject { put("p_player_id",playerId);put("p_amount",amount);put("p_reason",reason) })
+    suspend fun adminAdjustBones(playerId:String,amount:Long,reason:String):Long = client.postgrest.rpc("admin_adjust_bones",buildJsonObject { put("p_player_id",playerId);put("p_amount",amount);put("p_reason",reason) }).data.trim().trim('"').toLong()
     suspend fun adminSuspend(playerId:String,reason:String) = client.postgrest.rpc("admin_set_suspension",buildJsonObject { put("p_player_id",playerId);put("p_until",kotlinx.serialization.json.JsonNull);put("p_permanent",true);put("p_reason",reason) })
     suspend fun adminUnsuspend(playerId:String,reason:String) = client.postgrest.rpc("admin_clear_suspension",buildJsonObject { put("p_player_id",playerId);put("p_reason",reason) })
     suspend fun adminForceName(playerId:String,name:String,reason:String) = client.postgrest.rpc("admin_force_player_name",buildJsonObject { put("p_player_id",playerId);put("p_new_name",name);put("p_require_new_name",false);put("p_reason",reason) })

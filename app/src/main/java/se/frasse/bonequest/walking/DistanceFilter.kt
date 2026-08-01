@@ -13,10 +13,11 @@ data class LocationSample(
 data class AcceptedSegment(val meters: Double,val from: LocationSample,val to: LocationSample)
 
 class DistanceFilter(
-    private val maximumAccuracyMeters: Float = 50f,
+    private val maximumAccuracyMeters: Float = 35f,
     private val maximumWalkingSpeedMps: Double = 12.0 / 3.6,
-    private val minimumSegmentMeters: Double = 2.0,
-    private val maximumGapMillis: Long = 120_000
+    private val minimumSegmentMeters: Double = 3.0,
+    private val maximumGapMillis: Long = 45_000,
+    private val minimumGapMillis:Long = 2_000
 ) {
     private var previous: LocationSample? = null
 
@@ -28,11 +29,15 @@ class DistanceFilter(
         previous = sample
         if (old == null) return null
         val elapsed = sample.elapsedRealtimeMillis-old.elapsedRealtimeMillis
-        if (elapsed<=0 || elapsed>maximumGapMillis) return null
+        if (elapsed<minimumGapMillis || elapsed>maximumGapMillis) return null
         val meters = haversineMeters(old.latitude,old.longitude,sample.latitude,sample.longitude)
-        if (meters<minimumSegmentMeters) return null
+        // GPS-punkter är cirklar, inte exakta koordinater. Rörelse som ryms i
+        // den sammanlagda felmarginalen är sannolikt drift från en stilla mobil.
+        val accuracyDeadZone=max(minimumSegmentMeters,(old.accuracyMeters+sample.accuracyMeters)*0.60)
+        if (meters<accuracyDeadZone) return null
         val inferredSpeed = meters/(elapsed/1000.0)
         val reported = sample.reportedSpeedMps?.takeIf { it>=0 }
+        if(reported!=null&&reported<0.30f&&meters<max(12.0,accuracyDeadZone*1.5))return null
         if (inferredSpeed>maximumWalkingSpeedMps || (reported!=null && reported>maximumWalkingSpeedMps)) return null
         return AcceptedSegment(meters,old,sample)
     }
