@@ -153,6 +153,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var permissionRefresh by remember { mutableIntStateOf(0) }
     var latestSharedRewardId by remember { mutableStateOf<String?>(null) }
     var sharedRewardInitialized by remember { mutableStateOf(false) }
+    var visibleMapBounds by remember { mutableStateOf<MapBounds?>(null) }
 
     BackHandler(enabled = activePanel != null) {
         activePanel = null
@@ -228,6 +229,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 val center = player ?: return@collect
                 runCatching { server.loadNearby(center) }.onSuccess {
                     bones=it.bones; piles=it.piles
+                }
+                visibleMapBounds?.let { bounds ->
+                    runCatching { server.mapPois(bounds) }.onSuccess { mapPois=it }
                 }
                 gameApi?.let { api -> runCatching { api.boneBalance() }.onSuccess { balance ->
                     boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -440,6 +444,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 followPlayer = followPlayer,
                 onManualMove = { followPlayer = false },
                 onBoundsChanged = { bounds ->
+                    visibleMapBounds = bounds
                     worldRepository?.let { server ->
                         scope.launch {
                             runCatching { server.mapPois(bounds) }
@@ -466,7 +471,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     val p = player
                     val d = if (p == null) 9999.0 else distanceMeters(p.latitude,p.longitude,pile.latitude,pile.longitude)
                     selectedPile=pile
-                    status=context.getString(R.string.pile_map_info,pile.cost,d.toInt())
+                    status=context.getString(R.string.pile_map_info,pile.cost,d.toInt())+pile.updatedAt?.let{" · Byter om ${timeUntilRefresh(it)}"}.orEmpty()
                 },
                 onPoiTapped={poi->if(adminMapMode)adminDeleteTarget="poi" to poi.poiId else selectedPoi=poi},
                 modifier = Modifier.fillMaxSize()
@@ -601,7 +606,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     )
                 }
             }
-            if(compactActions.isNotEmpty())CompactActionDock(compactActions,Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=15.dp).zIndex(3f))
+            if(compactActions.isNotEmpty())CompactActionDock(compactActions,Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=19.dp).zIndex(3f))
             XpProgressBar(
                 level=currentProfile.level,
                 current=currentProfile.xpCurrentLevel,
@@ -743,7 +748,10 @@ private data class CompactAction(val icon:Int,val label:String,val detail:String
         actions.forEach{action->
             Box(Modifier.weight(1f).fillMaxHeight().clickable(enabled=action.enabled,onClick=action.onClick),contentAlignment=Alignment.Center){
                 Image(painterResource(R.drawable.action_panel_pixel),null,Modifier.matchParentSize(),contentScale=ContentScale.FillBounds,colorFilter=if(action.enabled)null else androidx.compose.ui.graphics.ColorFilter.tint(androidx.compose.ui.graphics.Color.Gray))
-                Row(Modifier.fillMaxSize().padding(horizontal=7.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(action.icon),null,Modifier.size(30.dp),contentScale=ContentScale.Fit);Column(Modifier.weight(1f).padding(start=5.dp)){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=if(actions.size>3)9.sp else 11.sp,maxLines=1,overflow=TextOverflow.Ellipsis);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=8.sp,maxLines=1)}}
+                if(actions.size==1){
+                    Image(painterResource(action.icon),null,Modifier.align(Alignment.CenterStart).padding(start=30.dp).size(30.dp),contentScale=ContentScale.Fit)
+                    Column(Modifier.align(Alignment.Center).padding(start=48.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=13.sp,maxLines=1);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=9.sp,maxLines=1)}
+                }else Row(Modifier.fillMaxSize().padding(horizontal=7.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(action.icon),null,Modifier.size(30.dp),contentScale=ContentScale.Fit);Column(Modifier.weight(1f).padding(start=5.dp)){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=if(actions.size>3)9.sp else 11.sp,maxLines=1,overflow=TextOverflow.Ellipsis);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=8.sp,maxLines=1)}}
             }
         }
     }
@@ -766,7 +774,11 @@ private fun timeUntilRefresh(updatedAt:String):String=runCatching{
     Box(modifier.fillMaxWidth().height(15.dp).background(androidx.compose.ui.graphics.Color(0xFF11191D))){
         Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(androidx.compose.ui.graphics.Color(0xFFFFC31F)))
         Row(Modifier.matchParentSize()){repeat(9){Spacer(Modifier.weight(1f));Box(Modifier.width(1.dp).fillMaxHeight().padding(vertical=3.dp).background(androidx.compose.ui.graphics.Color(0xAA3B2B08)))};Spacer(Modifier.weight(1f))}
-        Text("LEVEL $level",Modifier.align(Alignment.Center),color=androidx.compose.ui.graphics.Color(0xFF17120A),fontSize=9.sp,fontWeight=FontWeight.Black)
+        val levelText="LEVEL $level"
+        listOf(-1f to 0f,1f to 0f,0f to -1f,0f to 1f,-1f to -1f,1f to -1f,-1f to 1f,1f to 1f).forEach{(x,y)->
+            Text(levelText,Modifier.align(Alignment.Center).graphicsLayer{translationX=x;translationY=y-1f},color=androidx.compose.ui.graphics.Color.Black,fontSize=9.sp,fontWeight=FontWeight.Black)
+        }
+        Text(levelText,Modifier.align(Alignment.Center).graphicsLayer{translationY=-1f},color=androidx.compose.ui.graphics.Color.White,fontSize=9.sp,fontWeight=FontWeight.Black)
     }
 }
 
@@ -1167,7 +1179,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
                         PropertyFactory.iconImage(BONE_IMAGE_IDS[index]),
                         PropertyFactory.iconAllowOverlap(true),
                         PropertyFactory.iconIgnorePlacement(true),
-                        PropertyFactory.iconSize(0.72f)
+                        PropertyFactory.iconSize(0.76f)
                     ),
                 PLAYER_LAYER_ID
             )
@@ -1176,7 +1188,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
     val pileDrawables = intArrayOf(R.drawable.dirt_pile_01,R.drawable.dirt_pile_02,R.drawable.dirt_pile_03,R.drawable.dirt_pile_04,R.drawable.dirt_pile_05)
     pileDrawables.forEachIndexed { index, id -> BitmapFactory.decodeResource(context.resources,id)?.let { style.addImage(PILE_IMAGE_IDS[index],it) } }
     if (style.getSource(PILE_SOURCE_ID)==null) style.addSource(GeoJsonSource(PILE_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
-    PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.94f)),PLAYER_LAYER_ID) }
+    PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.54f)),PLAYER_LAYER_ID) }
 
     val poiDrawables = intArrayOf(R.drawable.poi_dog_park, R.drawable.poi_pet_shop, R.drawable.poi_veterinary, R.drawable.poi_grooming)
     poiDrawables.forEachIndexed { index, id ->

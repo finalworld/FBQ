@@ -104,6 +104,10 @@ begin
     values(p_player,reward,new_balance,'level_reward',p_source_id); end if;
 end $$;
 
+-- The OUT columns changed in 0.402. PostgreSQL cannot alter a function's
+-- table return type through CREATE OR REPLACE, so remove the old no-arg
+-- signature first. This drops code only; no player or game data is removed.
+drop function if exists public.get_session_bootstrap();
 create or replace function public.get_session_bootstrap()
 returns table(
   player_id uuid,display_name text,onboarding_complete boolean,bone_count bigint,
@@ -226,11 +230,11 @@ end $$;
 create or replace function public.get_latest_shared_bone_reward()
 returns table(collection_id uuid,bone_type smallint,bone_value integer,created_at timestamptz)
 language sql stable security definer set search_path='' as $$
-  select c.id,c.bone_type,c.bone_value,c.created_at
+  select c.id,c.bone_type,c.bone_value,c.collected_at
   from public.bone_collection_rewards r
   join public.bone_collections c on c.id=r.collection_id
   where r.player_id=auth.uid() and c.initiator_id<>auth.uid()
-  order by c.created_at desc,c.id desc limit 1
+  order by c.collected_at desc,c.id desc limit 1
 $$;
 
 create or replace function public.buy_shop_item(p_poi_id uuid,p_item_id text,p_client_request_id uuid)

@@ -71,7 +71,8 @@ class WorldRepository(private val client:SupabaseClient) {
     private val channel=client.channel("fbq-world-map")
     val worldChanges:Flow<Unit> = merge(
         channel.postgresChangeFlow<PostgresAction>(schema="public") { table="world_bones" },
-        channel.postgresChangeFlow<PostgresAction>(schema="public") { table="dirt_piles" }
+        channel.postgresChangeFlow<PostgresAction>(schema="public") { table="dirt_piles" },
+        channel.postgresChangeFlow<PostgresAction>(schema="public") { table="game_pois" }
     ).map { Unit }
 
     suspend fun subscribe() { channel.subscribe(blockUntilSubscribed=true) }
