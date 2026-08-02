@@ -1,6 +1,6 @@
 {
   "version": 8,
-  "name": "Frasse Dark Grass",
+  "name": "Frasse Pixel RPG",
   "sources": {
     "openmaptiles": {
       "type": "vector",
@@ -13,7 +13,7 @@
     {
       "id": "background",
       "type": "background",
-      "paint": { "background-color": "#477f3f" }
+      "paint": { "background-color": "#496F35" }
     },
     {
       "id": "landcover",
@@ -23,12 +23,12 @@
       "paint": {
         "fill-color": [
           "match", ["get", "class"],
-          "wood", "#356d37",
-          "grass", "#4f9146",
-          "farmland", "#568e47",
-          "wetland", "#477f46",
-          "sand", "#668c4d",
-          "#477f3f"
+          "wood", "#284E2D",
+          "grass", "#567D39",
+          "farmland", "#718446",
+          "wetland", "#365E4B",
+          "sand", "#BFA36A",
+          "#496F35"
         ],
         "fill-opacity": 0.95
       }
@@ -38,7 +38,7 @@
       "type": "fill",
       "source": "openmaptiles",
       "source-layer": "park",
-      "paint": { "fill-color": "#4b8842", "fill-opacity": 0.92 }
+      "paint": { "fill-color": "#4E7836", "fill-opacity": 0.96 }
     },
     {
       "id": "landuse",
@@ -48,12 +48,12 @@
       "paint": {
         "fill-color": [
           "match", ["get", "class"],
-          "residential", "#56864c",
-          "agriculture", "#5b914a",
-          "cemetery", "#416f40",
-          "industrial", "#527f49",
-          "commercial", "#527f49",
-          "#4d8743"
+          "residential", "#67784B",
+          "agriculture", "#718446",
+          "cemetery", "#365A38",
+          "industrial", "#62664D",
+          "commercial", "#6B674D",
+          "#52723C"
         ],
         "fill-opacity": 0.88
       }
@@ -63,14 +63,14 @@
       "type": "fill",
       "source": "openmaptiles",
       "source-layer": "water",
-      "paint": { "fill-color": "#78a9e9", "fill-opacity": 1.0 }
+      "paint": { "fill-color": "#2F7895", "fill-opacity": 1.0 }
     },
     {
       "id": "waterway",
       "type": "line",
       "source": "openmaptiles",
       "source-layer": "waterway",
-      "paint": { "line-color": "#76aee5", "line-width": 1.6 }
+      "paint": { "line-color": "#3E90AA", "line-width": 2.0 }
     },
     {
       "id": "building",
@@ -79,8 +79,8 @@
       "source-layer": "building",
       "minzoom": 13,
       "paint": {
-        "fill-color": "#d1cdc7",
-        "fill-outline-color": "#a8a49e",
+        "fill-color": "#C6B58F",
+        "fill-outline-color": "#594C37",
         "fill-opacity": 0.95
       }
     },
@@ -92,7 +92,7 @@
       "filter": ["match", ["get", "class"], ["motorway", "trunk", "primary", "secondary", "tertiary", "minor", "service"], true, false],
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#bf9560",
+        "line-color": "#6F5130",
         "line-width": ["interpolate", ["exponential", 1.2], ["zoom"], 8, 1.2, 12, 2.7, 16, 8.5, 20, 22]
       }
     },
@@ -106,12 +106,12 @@
       "paint": {
         "line-color": [
           "match", ["get", "class"],
-          "motorway", "#f4b868",
-          "trunk", "#f4bd73",
-          "primary", "#ffd28a",
-          "secondary", "#f7ddb0",
-          "tertiary", "#efe5ce",
-          "#f1ede5"
+          "motorway", "#D69A50",
+          "trunk", "#DEA85F",
+          "primary", "#E8C47F",
+          "secondary", "#E7D09D",
+          "tertiary", "#E4D8B7",
+          "#E9DFC6"
         ],
         "line-width": ["interpolate", ["exponential", 1.2], ["zoom"], 8, 0.7, 12, 1.8, 16, 6.3, 20, 18]
       }
@@ -125,7 +125,7 @@
       "minzoom": 11,
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#f4f1e7",
+        "line-color": "#F0DFB4",
         "line-width": ["interpolate", ["linear"], ["zoom"], 11, 0.7, 15, 2.0, 18, 4.5],
         "line-dasharray": [1.2, 1.0]
       }
@@ -146,8 +146,8 @@
         "text-max-angle": 35
       },
       "paint": {
-        "text-color": "#30291f",
-        "text-halo-color": "rgba(255,247,225,0.88)",
+        "text-color": "#2A241B",
+        "text-halo-color": "rgba(255,232,190,0.94)",
         "text-halo-width": 1.4
       }
     }
