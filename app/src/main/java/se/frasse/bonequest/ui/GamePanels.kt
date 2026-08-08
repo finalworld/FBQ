@@ -21,7 +21,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -238,31 +240,42 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
         Text(stringResource(if(profile.homeLat==null)R.string.home_not_set else R.string.home_saved_map),color=PanelCream,fontSize=18.sp)
         Button(enabled=pending==null,onClick={scope.launch{runCatching{api.setHome()}.onSuccess{message=context.getString(R.string.home_saved_cooldown);onProfile(api.bootstrap())}.onFailure{message=context.getString(R.string.home_move_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_068))}
         HorizontalDivider();Text(stringResource(R.string.ui_text_020),color=PanelGold,fontWeight=FontWeight.Black,fontSize=20.sp);Text(message,color=if(error)Color(0xFFFF6B5D) else PanelCream)
-        DogBoneSlotMachine(if(lastWasLoss&&pending==null)-1 else reelBone,"Insats 1 · 2 · 5 · 10",pending!=null)
-        Column(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(5.dp)).padding(9.dp)){Text("VINSTLISTA",color=PanelGold,fontWeight=FontWeight.Black);Text("Ingen vinst 55%  ·  1× 25%  ·  2× 15%",color=PanelCream,fontSize=11.sp);Text("5× 4%  ·  10× 0,9%  ·  50× 0,1%",color=PanelCream,fontSize=11.sp)}
-        if(pending==null)Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){listOf(1,2,5,10).forEach{stake->Button(onClick={scope.launch{error=false;runCatching{api.spinHome(stake)}.onSuccess{pending=it;revealed=false;message=context.getString(R.string.slot_spinning)}.onFailure{error=true;message=context.getString(R.string.slot_unavailable)}}},modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Color(0xFFD0B7FF),contentColor=Color(0xFF21162E))){Text(stake.toString(),color=Color(0xFF21162E),fontWeight=FontWeight.Black)}}}
-        else Column(horizontalAlignment=Alignment.CenterHorizontally){LinearProgressIndicator(Modifier.fillMaxWidth(),color=PanelGold);TextButton(onClick={reveal()}){Text(stringResource(R.string.ui_text_030))}}
+        DogBoneSlotMachine(
+            boneType=if(lastWasLoss&&pending==null)-1 else reelBone,
+            information="Insats",
+            spinning=pending!=null,
+            stakes=listOf(1,2,5,10),
+            onStake={stake->scope.launch{error=false;runCatching{api.spinHome(stake)}.onSuccess{pending=it;revealed=false;message=context.getString(R.string.slot_spinning)}.onFailure{error=true;message=context.getString(R.string.slot_unavailable)}}}
+        )
+        if(pending!=null)Column(horizontalAlignment=Alignment.CenterHorizontally){LinearProgressIndicator(Modifier.fillMaxWidth(),color=PanelGold);TextButton(onClick={reveal()}){Text(stringResource(R.string.ui_text_030))}}
     }
 }
 
-@Composable internal fun DogBoneSlotMachine(boneType:Int,information:String,spinning:Boolean,modifier:Modifier=Modifier){
-    BoxWithConstraints(modifier.fillMaxWidth().aspectRatio(1.249f),contentAlignment=Alignment.Center){
-        Image(painterResource(R.drawable.dog_slot_machine_pixel),null,Modifier.matchParentSize(),contentScale=ContentScale.Fit)
-        Box(
-            Modifier.align(Alignment.Center).offset(x=(-1).dp,y=8.dp).fillMaxWidth(.36f).fillMaxHeight(.30f),
-            contentAlignment=Alignment.Center
-        ){
-            if(boneType<0)Column(
-                Modifier.background(Color(0xFFE8C47F),RoundedCornerShape(3.dp)).padding(horizontal=12.dp,vertical=7.dp),
-                horizontalAlignment=Alignment.CenterHorizontally
-            ){
-                Text("✕",color=Color(0xFF8A2B26),fontSize=24.sp,fontWeight=FontWeight.Black)
-                Text("NITLOTT",color=Color(0xFF5A3322),fontWeight=FontWeight.Black,fontSize=10.sp)
-            } else Image(painterResource(boneDrawable(boneType)),null,Modifier.fillMaxSize(.82f),contentScale=ContentScale.Fit)
+@Composable internal fun DogBoneSlotMachine(
+    boneType:Int,information:String,spinning:Boolean,modifier:Modifier=Modifier,
+    stakes:List<Int> = emptyList(),onStake:(Int)->Unit={},oddsLines:List<String>?=null
+){
+    val odds=oddsLines?:listOf("INGEN · 55%","1× · 25%","2× · 15%","5× · 4%","10× · 0,9%","50× · 0,1%")
+    BoxWithConstraints(modifier.fillMaxWidth().aspectRatio(.667f),contentAlignment=Alignment.Center){
+        Image(painterResource(R.drawable.dog_slot_machine_mobile_v2),null,Modifier.matchParentSize(),contentScale=ContentScale.Fit)
+        odds.forEachIndexed{i,line->
+            Text(line,color=PanelCream,fontSize=7.sp,fontWeight=FontWeight.Black,maxLines=1,
+                modifier=Modifier.align(Alignment.TopStart).offset(x=maxWidth*.685f,y=maxHeight*(.305f+i*.061f)).width(maxWidth*.235f),
+                textAlign=TextAlign.Center)
         }
-        Column(Modifier.align(Alignment.BottomCenter).padding(bottom=4.dp),horizontalAlignment=Alignment.CenterHorizontally){
-            Text(if(spinning)"RULLAR…" else information,color=PanelCream,fontSize=9.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1)
+        if(spinning)Text("RULLAR…",color=PanelGold,fontSize=12.sp,fontWeight=FontWeight.Black,
+            modifier=Modifier.align(Alignment.TopStart).offset(x=maxWidth*.16f,y=maxHeight*.52f).width(maxWidth*.42f),textAlign=TextAlign.Center)
+        if(boneType<0&&!spinning)Text("NITLOTT",color=Color(0xFF8A2B26),fontSize=13.sp,fontWeight=FontWeight.Black,
+            modifier=Modifier.align(Alignment.TopStart).offset(x=maxWidth*.16f,y=maxHeight*.52f).width(maxWidth*.42f),textAlign=TextAlign.Center)
+        stakes.take(4).forEachIndexed{i,stake->
+            Box(Modifier.align(Alignment.TopStart).offset(x=maxWidth*(.055f+i*.235f),y=maxHeight*.704f)
+                .width(maxWidth*.205f).height(maxHeight*.165f).clickable(enabled=!spinning){onStake(stake)},contentAlignment=Alignment.Center){
+                Text(stake.toString(),color=Color.White,fontSize=24.sp,fontWeight=FontWeight.Black,
+                    style=LocalTextStyle.current.copy(shadow=Shadow(Color.Black,Offset(2f,2f),1f)))
+            }
         }
+        Text(if(spinning)"RULLAR…" else information,color=PanelCream,fontSize=8.sp,fontWeight=FontWeight.Black,
+            modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=5.dp),textAlign=TextAlign.Center,maxLines=1)
     }
 }
 
