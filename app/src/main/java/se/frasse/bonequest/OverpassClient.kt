@@ -40,7 +40,7 @@ object OverpassClient {
         val query = """
             [out:json][timeout:25];
             way(around:$radiusMeters,${center.latitude},${center.longitude})
-              ["highway"~"^(footway|path|pedestrian|track)$"]
+              ["highway"~"^(footway|path|pedestrian|track|residential|living_street|service|unclassified)$"]
               ["access"!="private"];
             out geom;
         """.trimIndent()
@@ -86,7 +86,7 @@ object OverpassClient {
             .distinctBy { "%.5f_%.5f".format(java.util.Locale.US, it.latitude, it.longitude) }
             .filter {
                 val d = distanceMeters(center.latitude, center.longitude, it.latitude, it.longitude)
-                d in 120.0..radiusMeters.toDouble()
+                d in 35.0..radiusMeters.toDouble()
             }
 
         val picked = mutableListOf<GeoPoint>()

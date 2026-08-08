@@ -134,6 +134,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var insideForegroundBoneZone by remember { mutableStateOf(false) }
     var homeInfoOpen by remember { mutableStateOf(false) }
     var pendingPileReward by remember { mutableStateOf<PileResult?>(null) }
+    var pileRewardSpinning by remember { mutableStateOf(false) }
+    var pendingPuppy by remember { mutableStateOf<PendingPuppy?>(null) }
+    var pendingPuppyName by remember { mutableStateOf("Valpen") }
     var pileReelBone by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
     var profileOpen by remember { mutableStateOf(false) }
@@ -150,6 +153,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var gpsWasInError by remember { mutableStateOf(false) }
     var poiDiscoveryDone by remember { mutableStateOf(false) }
     var walkableDiscoveryDone by remember { mutableStateOf(false) }
+    var lastDiscoveryCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var permissionRefresh by remember { mutableIntStateOf(0) }
     var latestSharedRewardId by remember { mutableStateOf<String?>(null) }
     var sharedRewardInitialized by remember { mutableStateOf(false) }
@@ -195,6 +199,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     LaunchedEffect(Unit) {
         if (!permissionGranted) permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         gameApi?.let{runCatching{it.poiSettings()}.onSuccess{settings->poiSettings=settings}}
+        gameApi?.let{runCatching{it.pendingPuppy()}.onSuccess{pendingPuppy=it}}
     }
 
     LaunchedEffect(permissionGranted,currentProfile.walkingModeEnabled,permissionRefresh) {
@@ -311,6 +316,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
                         runCatching { worldRepository.updatePresence(
                             point,location.accuracy,location.bearing,location.speed.takeIf { location.hasSpeed() }
                         ) }.isSuccess
+                        val movedToNewArea=lastDiscoveryCenter?.let{distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>1_000}?:true
+                        if(movedToNewArea){poiDiscoveryDone=false;walkableDiscoveryDone=false;lastDiscoveryCenter=point}
                         if(location.accuracy<=30&&!poiDiscoveryDone&&gameApi!=null){
                             poiDiscoveryDone=true
                             runCatching{OverpassClient.discoverDogPois(point)}.onSuccess{found->
@@ -403,11 +410,19 @@ internal fun GameScreen(profile:SessionBootstrap) {
             if(currentProfile.barkEnabled) runCatching { DogBarkPlayer.play() }
         }
     }
+    var insideForegroundPileZone by remember { mutableStateOf(false) }
+    LaunchedEffect(nearPile!=null,currentProfile.walkingModeEnabled,currentProfile.barkEnabled,currentProfile.vibrationEnabled){
+        if(nearPile==null){insideForegroundPileZone=false;return@LaunchedEffect}
+        if(!insideForegroundPileZone&&!currentProfile.walkingModeEnabled){insideForegroundPileZone=true;if(currentProfile.vibrationEnabled)runCatching{context.getSystemService(android.os.Vibrator::class.java)?.vibrate(android.os.VibrationEffect.createWaveform(longArrayOf(0,130,90,130),-1))};if(currentProfile.barkEnabled)runCatching{DogBarkPlayer.play()}}
+    }
     LaunchedEffect(pendingPileReward?.claimId){
         val reward=pendingPileReward?:return@LaunchedEffect
+        pileRewardSpinning=true
         repeat(15){pileReelBone=(pileReelBone+1)%12;delay(200)}
         status=context.getString(R.string.pile_reward_status,reward.rewardValue,if(reward.isDouble)context.getString(R.string.double_win_suffix) else "")
-        pendingPileReward=null
+        pileReelBone=reward.boneType.coerceIn(0,11)
+        pileRewardSpinning=false
+        gameApi?.let{runCatching{it.pendingPuppy()}.onSuccess{pendingPuppy=it}}
     }
 
     fun collectVisibleBone(){
@@ -584,7 +599,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             }
             pendingPileReward?.let { reward->
                 Surface(Modifier.align(Alignment.Center).padding(24.dp),color=androidx.compose.ui.graphics.Color(0xF21A2022),shape=RoundedCornerShape(8.dp)){
-                    Column(Modifier.padding(14.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(stringResource(R.string.ui_text_032),color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=22.sp,fontWeight=FontWeight.Black);DogBoneSlotMachine(pileReelBone,"Vinst minst ${reward.cost} ben",true,Modifier.widthIn(max=390.dp));PilePrizeList(reward.cost);LinearProgressIndicator(Modifier.fillMaxWidth().padding(top=8.dp));TextButton(onClick={status=context.getString(R.string.pile_reward_status,reward.rewardValue,if(reward.isDouble)context.getString(R.string.double_win_suffix) else "");pendingPileReward=null}){Text(stringResource(R.string.ui_text_030))}}
+                    Column(Modifier.padding(14.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(if(pileRewardSpinning) stringResource(R.string.ui_text_032) else "Du vann ${reward.rewardValue} ben!",color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=22.sp,fontWeight=FontWeight.Black);DogBoneSlotMachine(pileReelBone,"Vinst minst ${reward.cost} ben",pileRewardSpinning,Modifier.widthIn(max=390.dp));PilePrizeList(reward.cost);if(pileRewardSpinning)LinearProgressIndicator(Modifier.fillMaxWidth().padding(top=8.dp)) else Button(onClick={status=context.getString(R.string.pile_reward_status,reward.rewardValue,if(reward.isDouble)context.getString(R.string.double_win_suffix) else "");pendingPileReward=null},modifier=Modifier.fillMaxWidth().padding(top=8.dp)){Text("OK")}}
                 }
             }
             pileToConfirm?.let{pile->
@@ -623,6 +638,12 @@ internal fun GameScreen(profile:SessionBootstrap) {
             LevelUpDialog(currentProfile){
                 scope.launch { runCatching { gameApi?.dismissLevelNotice() };gameApi?.let { api -> runCatching { api.bootstrap() }.onSuccess { currentProfile=it;boneCount=it.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt() } } }
             }
+        }
+
+        pendingPuppy?.let{puppy->
+            val breedNames=listOf("Labrador retriever","Goldendoodle","Tysk schäfer","Fransk bulldogg","Beagle","Rottweiler","Pudel (stor)","Siberian husky","Border collie","Tax (korthårig)")
+            val dogRes=context.resources.getIdentifier("dog_${puppy.breed.coerceIn(0,9).toString().padStart(2,'0')}_stage_0","drawable",context.packageName)
+            AlertDialog(onDismissRequest={},title={Text("DU HITTADE EN VALP!")},text={Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(8.dp)){Image(painterResource(dogRes),null,Modifier.size(150.dp),contentScale=ContentScale.Crop);Text("${breedNames.getOrElse(puppy.breed){"Hund"}} ${if(puppy.gender=="female")"♀" else "♂"}",fontWeight=FontWeight.Black);Text("Utveckling: ${puppy.developmentKm} km · hittad i en ${listOf(10,25,50,100,250).getOrElse(puppy.foundPileType){10}}-benshög");Text("Perks avslöjas lite i taget när valpen växer.");OutlinedTextField(pendingPuppyName,{pendingPuppyName=it.take(20)},label={Text("Namn")},singleLine=true)}},confirmButton={Button(enabled=pendingPuppyName.isNotBlank(),onClick={scope.launch{runCatching{gameApi?.resolvePuppy(puppy.id,true,pendingPuppyName)}.onSuccess{pendingPuppy=null;gameApi?.let{api->runCatching{api.bootstrap()}.onSuccess{currentProfile=it}}}.onFailure{status=it.message}}}){Text("BEHÅLL VALPEN")}},dismissButton={TextButton(onClick={scope.launch{runCatching{gameApi?.resolvePuppy(puppy.id,false)}.onSuccess{pendingPuppy=null}}}){Text("LYCKLIGA SVANSARS HUNDSTALL")}})
         }
 
         if (profileOpen) {

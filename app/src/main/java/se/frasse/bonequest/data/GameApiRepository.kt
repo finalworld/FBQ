@@ -72,6 +72,35 @@ import java.util.UUID
     @SerialName("collection_id") val collectionId:String,@SerialName("bone_type") val boneType:Int,
     @SerialName("bone_value") val boneValue:Int,@SerialName("created_at") val createdAt:String
 )
+@Serializable data class PendingPuppy(
+    val id:String,val breed:Int,val gender:String,
+    @SerialName("development_km") val developmentKm:Int,
+    @SerialName("found_pile_type") val foundPileType:Int,
+    @SerialName("found_area") val foundArea:String?=null,
+    @SerialName("created_at") val createdAt:String
+)
+@Serializable data class DogProfile(
+    val id:String,val name:String,val breed:Int,val gender:String,
+    @SerialName("development_km") val developmentKm:Int,val stage:Int,
+    @SerialName("distance_meters") val distanceMeters:Long,
+    @SerialName("visible_perks") val visiblePerks:List<Int> = emptyList(),
+    @SerialName("perk_primary") val perkPrimary:Int?=null,
+    @SerialName("perk_primary_level") val perkPrimaryLevel:Int?=null,
+    @SerialName("perk_secondary") val perkSecondary:Int?=null,
+    @SerialName("perk_secondary_level") val perkSecondaryLevel:Int?=null,
+    @SerialName("is_active") val isActive:Boolean,
+    @SerialName("is_puppy") val isPuppy:Boolean,
+    @SerialName("found_area") val foundArea:String?=null,
+    @SerialName("found_at") val foundAt:String,
+    @SerialName("renamed_at") val renamedAt:String?=null
+)
+@Serializable data class PlayerEvent(
+    val id:Long,val category:String,val title:String,
+    @SerialName("bone_delta") val boneDelta:Long,
+    @SerialName("xp_delta") val xpDelta:Double,
+    val details:kotlinx.serialization.json.JsonElement,
+    @SerialName("created_at") val createdAt:String
+)
 @Serializable data class AdminAudit(
     @SerialName("entry_id") val entryId:Long,@SerialName("admin_id") val adminId:String,
     val action:String,@SerialName("target_player_id") val targetPlayerId:String?=null,
@@ -84,6 +113,18 @@ class GameApiRepository(private val client:SupabaseClient) {
     suspend fun bootstrap():SessionBootstrap = client.postgrest.rpc("get_session_bootstrap").decodeSingle()
     suspend fun dismissLevelNotice() = client.postgrest.rpc("dismiss_level_notice")
     suspend fun latestSharedBoneReward():SharedBoneReward? = client.postgrest.rpc("get_latest_shared_bone_reward").decodeList<SharedBoneReward>().firstOrNull()
+    suspend fun pendingPuppy():PendingPuppy?=client.postgrest.rpc("get_pending_puppy").decodeList<PendingPuppy>().firstOrNull()
+    suspend fun resolvePuppy(id:String,keep:Boolean,name:String="Valpen",replaceDogId:String?=null):String? = client.postgrest.rpc("resolve_pending_puppy",buildJsonObject {
+        put("p_pending_id",id);put("p_keep_new",keep);put("p_name",name)
+        if(replaceDogId==null)put("p_replace_dog_id",kotlinx.serialization.json.JsonNull) else put("p_replace_dog_id",replaceDogId)
+    }).data.trim().trim('"').takeIf{it.isNotBlank()&&it!="null"}
+    suspend fun dogs():List<DogProfile> = client.postgrest.rpc("get_my_dogs").decodeList()
+    suspend fun setActiveDog(id:String)=client.postgrest.rpc("set_active_dog",buildJsonObject{put("p_dog_id",id)})
+    suspend fun renameActiveDog(name:String)=client.postgrest.rpc("rename_active_dog",buildJsonObject{put("p_name",name)})
+    suspend fun sendDogToKennel(id:String)=client.postgrest.rpc("send_dog_to_kennel",buildJsonObject{put("p_dog_id",id)})
+    suspend fun eventLog(category:String?=null):List<PlayerEvent> = client.postgrest.rpc("get_my_event_log",buildJsonObject {
+        if(category==null)put("p_category",kotlinx.serialization.json.JsonNull) else put("p_category",category);put("p_limit",100)
+    }).decodeList()
     suspend fun setAdminMode(enabled:Boolean) = client.postgrest.rpc("set_admin_mode",buildJsonObject { put("p_enabled",enabled) })
     suspend fun boneBalance():Long = client.postgrest.rpc("get_my_bone_balance").data.trim().toLong()
     suspend fun collection():List<BoneCollectionRow> = client.postgrest.rpc("get_bone_collection").decodeList()

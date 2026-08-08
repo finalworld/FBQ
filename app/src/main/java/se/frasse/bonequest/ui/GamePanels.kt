@@ -36,7 +36,7 @@ import kotlinx.coroutines.withContext
 import se.frasse.bonequest.walking.WalkingPreferences
 import se.frasse.bonequest.walking.WalkingServiceController
 
-enum class GamePanel { PROFILE, COLLECTION, EQUIPMENT, FLOCKS, HOME, SETTINGS, ADMIN, SHOP }
+enum class GamePanel { PROFILE, COLLECTION, EQUIPMENT, DOGS, EVENT_LOG, FLOCKS, HOME, SETTINGS, ADMIN, SHOP }
 
 private val PanelDark=Color(0xFF151B1D)
 private val PanelGold=Color(0xFFE2AA3D)
@@ -61,6 +61,8 @@ private val PanelTeal=Color(0xFF168D8A)
                 MenuTile("🐾",stringResource(R.string.menu_profile)) { panel=GamePanel.PROFILE }
                 MenuTile("🦴",stringResource(R.string.menu_collection)) { panel=GamePanel.COLLECTION }
                 MenuTile("🎒",stringResource(R.string.menu_equipment)) { panel=GamePanel.EQUIPMENT }
+                MenuTile("🐶","Hundar") { panel=GamePanel.DOGS }
+                MenuTile("📜","Logg") { panel=GamePanel.EVENT_LOG }
                 MenuTile("🐕",stringResource(R.string.menu_flocks)) { panel=GamePanel.FLOCKS }
                 MenuTile("🏠",stringResource(R.string.menu_home)) { panel=GamePanel.HOME }
                 MenuTile(R.drawable.menu_settings_pixel,stringResource(R.string.menu_settings)) { panel=GamePanel.SETTINGS }
@@ -84,6 +86,8 @@ private val PanelTeal=Color(0xFF168D8A)
                         GamePanel.PROFILE->ProfilePanel(profile,api,onProfile){panel=GamePanel.COLLECTION}
                         GamePanel.COLLECTION->CollectionPanel(api)
                         GamePanel.EQUIPMENT->EquipmentPanel(api,onProfile)
+                        GamePanel.DOGS->DogsPanel(profile,api,onBalance,onProfile)
+                        GamePanel.EVENT_LOG->EventLogPanel(api)
                         GamePanel.FLOCKS->FlocksPanel(api,onBalance)
                         GamePanel.HOME->HomePanel(profile,api,onBalance,onProfile)
                         GamePanel.SETTINGS->SettingsPanel(profile,api,poiSettings,onPoiSettings,onProfile)
@@ -131,6 +135,8 @@ private val PanelTeal=Color(0xFF168D8A)
                     GamePanel.PROFILE -> ProfilePanel(profile,api,onProfile){onNavigate(GamePanel.COLLECTION)}
                     GamePanel.COLLECTION -> CollectionPanel(api)
                     GamePanel.EQUIPMENT -> EquipmentPanel(api,onProfile)
+                    GamePanel.DOGS -> DogsPanel(profile,api,onBalance,onProfile)
+                    GamePanel.EVENT_LOG -> EventLogPanel(api)
                     GamePanel.FLOCKS -> FlocksPanel(api,onBalance)
                     GamePanel.HOME -> HomePanel(profile,api,onBalance,onProfile)
                     GamePanel.SETTINGS -> SettingsPanel(profile,api,poiSettings,onPoiSettings,onProfile)
@@ -144,6 +150,7 @@ private val PanelTeal=Color(0xFF168D8A)
 
 private fun panelTitleResource(p:GamePanel)=when(p){
     GamePanel.PROFILE->R.string.panel_profile;GamePanel.COLLECTION->R.string.panel_collection;GamePanel.EQUIPMENT->R.string.panel_equipment
+    GamePanel.DOGS->R.string.panel_dogs;GamePanel.EVENT_LOG->R.string.panel_event_log
     GamePanel.FLOCKS->R.string.panel_flocks;GamePanel.HOME->R.string.panel_home;GamePanel.SETTINGS->R.string.panel_settings
     GamePanel.ADMIN->R.string.panel_admin;GamePanel.SHOP->R.string.panel_shop
 }
@@ -153,7 +160,7 @@ private fun panelTitleResource(p:GamePanel)=when(p){
     var markerName by remember(profile.activeMarkerId){mutableStateOf(humanizeMarkerId(profile.activeMarkerId))}
     LaunchedEffect(profile.activeMarkerId){markerName=runCatching{api.catalog().firstOrNull{it.itemId==profile.activeMarkerId}?.nameSv}.getOrNull()?:humanizeMarkerId(profile.activeMarkerId)}
     LazyColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        item { StatCard(stringResource(R.string.profile_game_name),profile.displayName);StatCard("Level",profile.level.toString());StatCard("XP till nästa level",if(profile.level>=100)"MAX" else "${profile.xpCurrentLevel.toInt()} / ${profile.xpNextLevel.toInt()}");StatCard("XP totalt",profile.xpTotal.toInt().toString());StatCard("XP från ben",profile.xpFromBones.toInt().toString());StatCard("XP från promenader",profile.xpFromWalking.toInt().toString());StatCard("XP från jordhögar",profile.xpFromPiles.toInt().toString());StatCard(stringResource(R.string.profile_member_label),profile.createdAt.take(10));StatCard(stringResource(R.string.profile_balance_label),profile.boneCount.toString());StatCard(stringResource(R.string.profile_walked_label),stringResource(R.string.profile_km_value,profile.totalMeters/1000.0));StatCard(stringResource(R.string.profile_bones_found_label),profile.totalBones.toString());StatCard(stringResource(R.string.profile_piles_label),profile.totalPiles.toString());StatCard(stringResource(R.string.profile_active_marker_label),markerName) }
+        item { StatCard(stringResource(R.string.profile_game_name),profile.displayName);StatCard("Level",profile.level.toString());StatCard("XP till nästa level",if(profile.level>=100)"MAX" else "${profile.xpCurrentLevel.toInt()} / ${profile.xpNextLevel.toInt()} · ${(profile.xpNextLevel-profile.xpCurrentLevel).coerceAtLeast(0.0).toInt()} XP kvar");StatCard("XP totalt",profile.xpTotal.toInt().toString());StatCard("XP från ben",profile.xpFromBones.toInt().toString());StatCard("XP från promenader",profile.xpFromWalking.toInt().toString());StatCard("XP från jordhögar",profile.xpFromPiles.toInt().toString());StatCard(stringResource(R.string.profile_member_label),profile.createdAt.take(10));StatCard(stringResource(R.string.profile_balance_label),profile.boneCount.toString());StatCard(stringResource(R.string.profile_walked_label),stringResource(R.string.profile_km_value,profile.totalMeters/1000.0));StatCard(stringResource(R.string.profile_bones_found_label),profile.totalBones.toString());StatCard(stringResource(R.string.profile_piles_label),profile.totalPiles.toString());StatCard(stringResource(R.string.profile_active_marker_label),markerName) }
         item { Button(onClick={edit=!edit},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_082))} }
         item { OutlinedButton(onClick=onCollection,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_084))} }
         if(edit) item { OutlinedTextField(name,{name=it.take(20)},Modifier.fillMaxWidth(),singleLine=true);Button(enabled=GameNameRules.isValidPlayerName(name),onClick={scope.launch{runCatching{api.changeName(name);api.bootstrap()}.onSuccess{onProfile(it);edit=false}.onFailure{message=it.message}}}){Text(stringResource(R.string.ui_text_062))}}
@@ -167,6 +174,36 @@ private fun humanizeMarkerId(id:String)=when(id){
 }
 
 @Composable private fun StatCard(label:String,value:String) { Row(Modifier.fillMaxWidth().padding(vertical=7.dp)){Text(label,Modifier.weight(1f),color=PanelCream.copy(alpha=.7f));Text(value,color=PanelCream,fontWeight=FontWeight.Bold)} }
+
+private val dogBreeds=listOf("Labrador retriever","Goldendoodle","Tysk schäfer","Fransk bulldogg","Beagle","Rottweiler","Pudel (stor)","Siberian husky","Border collie","Tax (korthårig)")
+private val dogPerks=listOf("Dubbelnos","Vandringsglädje","Bensamlare","Grävmästare","Lång nos","Spårsinne","Flitig grävare","Butikskompis","Tursvans","Sällskapshund")
+private fun dogDrawable(context:android.content.Context,breed:Int,stage:Int)=context.resources.getIdentifier("dog_${breed.coerceIn(0,9).toString().padStart(2,'0')}_stage_${(stage.coerceIn(0,5)-1).coerceAtLeast(0)}","drawable",context.packageName)
+
+@Composable private fun DogsPanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit){
+    val context=LocalContext.current;val scope=rememberCoroutineScope();var dogs by remember{mutableStateOf<List<DogProfile>>(emptyList())};var message by remember{mutableStateOf<String?>(null)};var rename by remember{mutableStateOf<DogProfile?>(null)};var newName by remember{mutableStateOf("")};var kennel by remember{mutableStateOf<DogProfile?>(null)}
+    fun reload(){scope.launch{dogs=runCatching{api.dogs()}.getOrDefault(emptyList())}}
+    LaunchedEffect(Unit){reload()}
+    if(dogs.isEmpty())Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text("Lyckliga Svansars Hundstall",color=PanelGold,fontWeight=FontWeight.Black,fontSize=20.sp);Spacer(Modifier.height(8.dp));Text("Du har ingen hund ännu. Valpar kan hittas i jordhögar.",color=PanelCream,textAlign=TextAlign.Center)} else LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){
+        item{Text("Lyckliga Svansars Hundstall",color=PanelGold,fontWeight=FontWeight.Black,fontSize=18.sp);message?.let{Text(it,color=PanelCream)}}
+        items(dogs,key={it.id}){dog->
+            Card(colors=CardDefaults.cardColors(containerColor=Color(0xFF20282A))){Column(Modifier.fillMaxWidth().padding(10.dp)){
+                Row(verticalAlignment=Alignment.CenterVertically){Image(painterResource(dogDrawable(context,dog.breed,dog.stage)),null,Modifier.size(78.dp),contentScale=ContentScale.Crop);Column(Modifier.weight(1f).padding(start=10.dp)){Text("${dog.name} ${if(dog.gender=="female")"♀" else "♂"}",color=PanelCream,fontWeight=FontWeight.Black);Text(dogBreeds.getOrElse(dog.breed){"Hund"},color=PanelGold);Text(if(dog.isPuppy)"Valp · år ${dog.stage}" else "Vuxen hund",color=PanelCream,fontSize=11.sp);Text("${"%.2f".format(dog.distanceMeters/1000.0)} / ${dog.developmentKm} km",color=PanelCream,fontSize=11.sp)}}
+                val fraction=(dog.distanceMeters/(dog.developmentKm*1000f)).coerceIn(0f,1f);LinearProgressIndicator(progress={fraction},Modifier.fillMaxWidth().height(7.dp),color=Color(0xFFFFC928),trackColor=Color(0xFF111719))
+                Text(if(dog.stage>=5)buildString{append(dog.perkPrimary?.let{dogPerks.getOrNull(it)}?:"Okänd perk");append(" · nivå ${dog.perkPrimaryLevel ?: 1}");dog.perkSecondary?.let{append(" + ${dogPerks.getOrNull(it)} · nivå ${dog.perkSecondaryLevel ?: 1}")}} else "Möjliga perks: ${dog.visiblePerks.mapNotNull{dogPerks.getOrNull(it)}.joinToString()}",color=PanelCream,fontSize=10.sp)
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){if(!dog.isActive)Button(onClick={scope.launch{runCatching{api.setActiveDog(dog.id)}.onSuccess{reload()}.onFailure{message=it.message}}},modifier=Modifier.weight(1f)){Text("VÄLJ")};if(dog.isActive)OutlinedButton(onClick={rename=dog;newName=dog.name},modifier=Modifier.weight(1f)){Text("DÖP OM")};OutlinedButton(onClick={kennel=dog},modifier=Modifier.weight(1f)){Text("HUNDSTALL")}}
+            }}
+        }
+    }
+    rename?.let{dog->AlertDialog(onDismissRequest={rename=null},title={Text("Döp om ${dog.name}")},text={Column{Text("Kostar 100 ben. Namnet kan ändras igen efter ett dygn.");OutlinedTextField(newName,{newName=it.take(20)},singleLine=true)}},confirmButton={Button(enabled=newName.isNotBlank()&&profile.boneCount>=100,onClick={scope.launch{runCatching{api.renameActiveDog(newName)}.onSuccess{onBalance(profile.boneCount-100);reload();rename=null}.onFailure{message=it.message}}}){Text("SPARA")}},dismissButton={TextButton(onClick={rename=null}){Text("AVBRYT")}})}
+    kennel?.let{dog->AlertDialog(onDismissRequest={kennel=null},title={Text("Skicka till hundstallet?")},text={Text("${dog.name} lämnar din samling permanent hos Lyckliga Svansars Hundstall. Bekräfta en gång till för att fortsätta.")},confirmButton={Button(onClick={scope.launch{runCatching{api.sendDogToKennel(dog.id)}.onSuccess{reload();kennel=null}.onFailure{message=it.message}}}){Text("JA, SKICKA")}},dismissButton={TextButton(onClick={kennel=null}){Text("BEHÅLL")}})}
+}
+
+@Composable private fun EventLogPanel(api:GameApiRepository){
+    var category by remember{mutableStateOf<String?>(null)};var events by remember{mutableStateOf<List<PlayerEvent>>(emptyList())};var selected by remember{mutableStateOf<PlayerEvent?>(null)}
+    LaunchedEffect(category){events=runCatching{api.eventLog(category)}.getOrDefault(emptyList())}
+    Column{LazyRow(horizontalArrangement=Arrangement.spacedBy(5.dp)){items(listOf(null to "Alla","bone" to "Ben","xp" to "XP","purchase" to "Köp","pile" to "Högar","walking" to "Promenad","other" to "Övrigt")){(key,label)->FilterChip(category==key,{category=key},label={Text(label)})}};Spacer(Modifier.height(7.dp));if(events.isEmpty())Text("Loggen är tom.",color=PanelCream) else LazyColumn(verticalArrangement=Arrangement.spacedBy(5.dp)){items(events,key={it.id}){e->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(5.dp)).clickable{selected=e}.padding(9.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(shortTimestamp(e.createdAt),color=PanelCream.copy(alpha=.7f),fontSize=10.sp);Text(e.title,color=PanelCream,fontWeight=FontWeight.Bold)};Text(buildString{if(e.boneDelta!=0L)append("${if(e.boneDelta>0)"+" else ""}${e.boneDelta} ben ");if(e.xpDelta!=0.0)append("${if(e.xpDelta>0)"+" else ""}${e.xpDelta.toInt()} XP")},color=PanelGold,fontWeight=FontWeight.Bold)}}}}
+    selected?.let{e->AlertDialog(onDismissRequest={selected=null},title={Text(e.title)},text={Text("${shortTimestamp(e.createdAt)}\nBen: ${e.boneDelta}\nXP: ${e.xpDelta.toInt()}\nTransaktion: ${e.id}\n${e.details}")},confirmButton={TextButton(onClick={selected=null}){Text("OK")}})}
+}
 
 @Composable private fun CollectionPanel(api:GameApiRepository) {
     var rows by remember{mutableStateOf<List<BoneCollectionRow>>(emptyList())};var loading by remember{mutableStateOf(true)}

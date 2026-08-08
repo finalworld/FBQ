@@ -33,6 +33,7 @@ class WalkingLocationService : Service() {
     private var sessionMeters=0.0
     private var nearbyBones=0
     private var insideBoneZone=false
+    private var insidePileZone=false
     private var tracking=false
 
     private val callback=object:LocationCallback() {
@@ -57,6 +58,8 @@ class WalkingLocationService : Service() {
                                 nearbyBones=world.bones.size
                                 if(nearbyBones>0&&!insideBoneZone){insideBoneZone=true;alertForBone()}
                                 if(nearbyBones==0)insideBoneZone=false
+                                if(world.piles.isNotEmpty()&&!insidePileZone){insidePileZone=true;alertForPile()}
+                                if(world.piles.isEmpty())insidePileZone=false
                                 updateNotification()
                             }
                     }
@@ -153,6 +156,16 @@ class WalkingLocationService : Service() {
         if(preferences.barkEnabled.first()) {
             runCatching { DogBarkPlayer.play() }
         }
+    }
+
+    private suspend fun alertForPile() {
+        val preferences=WalkingPreferences(this)
+        if(preferences.vibrationEnabled.first()) runCatching {
+            getSystemService(Vibrator::class.java)?.vibrate(
+                VibrationEffect.createWaveform(longArrayOf(0,150,90,150),-1)
+            )
+        }
+        if(preferences.barkEnabled.first()) runCatching { DogBarkPlayer.play() }
     }
 
     companion object {

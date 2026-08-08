@@ -313,4 +313,6 @@
     <string name="admin_flock_name_changed">Flocknamnet ändrades.</string>
     <string name="admin_flock_name_failed">Flocknamnet kunde inte ändras.</string>
     <string name="admin_flock_help">Rätta ett olämpligt flocknamn. Åtgärden loggas och kräver flockens ID.</string>
+    <string name="panel_dogs">HUNDAR</string>
+    <string name="panel_event_log">LOGG</string>
 </resources>

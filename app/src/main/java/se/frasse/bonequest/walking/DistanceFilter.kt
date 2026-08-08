@@ -33,11 +33,12 @@ class DistanceFilter(
         val meters = haversineMeters(old.latitude,old.longitude,sample.latitude,sample.longitude)
         // GPS-punkter är cirklar, inte exakta koordinater. Rörelse som ryms i
         // den sammanlagda felmarginalen är sannolikt drift från en stilla mobil.
-        val accuracyDeadZone=max(minimumSegmentMeters,(old.accuracyMeters+sample.accuracyMeters)*0.60)
+        val accuracyDeadZone=max(minimumSegmentMeters,max(old.accuracyMeters,sample.accuracyMeters)*0.38)
         if (meters<accuracyDeadZone) return null
         val inferredSpeed = meters/(elapsed/1000.0)
         val reported = sample.reportedSpeedMps?.takeIf { it>=0 }
-        if(reported!=null&&reported<0.30f&&meters<max(12.0,accuracyDeadZone*1.5))return null
+        if(reported!=null&&reported<0.08f&&inferredSpeed<2.0)return null
+        if(reported!=null&&reported<0.22f&&meters<max(10.0,accuracyDeadZone*1.6))return null
         if (inferredSpeed>maximumWalkingSpeedMps || (reported!=null && reported>maximumWalkingSpeedMps)) return null
         return AcceptedSegment(meters,old,sample)
     }
