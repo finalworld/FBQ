@@ -1252,7 +1252,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
     val pileDrawables = intArrayOf(R.drawable.dirt_pile_01,R.drawable.dirt_pile_02,R.drawable.dirt_pile_03,R.drawable.dirt_pile_04,R.drawable.dirt_pile_05)
     pileDrawables.forEachIndexed { index, id -> BitmapFactory.decodeResource(context.resources,id)?.let { style.addImage(PILE_IMAGE_IDS[index],it) } }
     if (style.getSource(PILE_SOURCE_ID)==null) style.addSource(GeoJsonSource(PILE_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
-    PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.54f)),PLAYER_LAYER_ID) }
+    PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.68f)),PLAYER_LAYER_ID) }
 
     val poiDrawables = intArrayOf(R.drawable.poi_dog_park, R.drawable.poi_pet_shop, R.drawable.poi_veterinary, R.drawable.poi_grooming)
     poiDrawables.forEachIndexed { index, id ->
@@ -1452,10 +1452,14 @@ internal fun markerBitmap(context:android.content.Context,id:String):Bitmap {
 private fun markerAtlasIndex(id:String):Int? {
     fun suffix(prefix:String)=id.removePrefix(prefix).toIntOrNull()?.minus(1)
     return when {
-        // The v0.500 catalogue was deliberately renamed into atlas order.
-        // Keeping the previous remapping here paired the wrong dog with the
-        // label (for example Dobermann/Staffordshire bullterrier).
-        id.startsWith("marker_breed_")->suffix("marker_breed_")?.takeIf{it in 0..39}
+        // Production still has the original Swedish catalogue order. Map its
+        // stable IDs explicitly to the closest matching atlas portrait.
+        id.startsWith("marker_breed_")->suffix("marker_breed_")?.let { catalogIndex ->
+            intArrayOf(
+                9,0,37,34,5,13,8,23,11,3,21,21,4,31,1,2,18,27,
+                14,39,7,16,10,19,-1,24,-1,28,15,15,26,22,6,10,27,-1
+            ).getOrNull(catalogIndex)?.takeIf{it>=0}
+        }
         id.startsWith("marker_toy_")->suffix("marker_toy_")?.takeIf{it in 0..19}?.plus(40)
         id.startsWith("marker_paw_")->suffix("marker_paw_")?.takeIf{it in 0..9}?.plus(60)
         // Atlasens sista rader är inte ordnade som katalogens databas-ID:n.
