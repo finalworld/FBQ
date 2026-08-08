@@ -1405,9 +1405,8 @@ internal fun markerBitmap(context:android.content.Context,id:String):Bitmap {
     }
     markerAtlasIndex(id)?.let { index ->
         // Every atlas cell is exported as its own resource at build time. The
-        // source sheet is 1254 px (not 1200), so fixed 120 px runtime crops
-        // drifted into neighbouring icons and produced the rotating fragments
-        // seen in the shop.
+        // source sheet has uneven transparent padding at the right and bottom,
+        // so verified isolated cells prevent neighbouring icons from bleeding in.
         val resourceName="marker_cell_${index.toString().padStart(3,'0')}"
         val resourceId=context.resources.getIdentifier(resourceName,"drawable",context.packageName)
         if(resourceId!=0) {
