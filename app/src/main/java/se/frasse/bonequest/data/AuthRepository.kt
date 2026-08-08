@@ -42,6 +42,7 @@ data class SessionBootstrap(
     ,@SerialName("pending_level_to") val pendingLevelTo: Int? = null
     ,@SerialName("pending_level_bones") val pendingLevelBones: Long = 0
     ,@SerialName("pending_level_notice") val pendingLevelNotice: Boolean = false
+    ,val deviceSteps: Long = 0
 )
 
 class AuthRepository(private val client: SupabaseClient) {

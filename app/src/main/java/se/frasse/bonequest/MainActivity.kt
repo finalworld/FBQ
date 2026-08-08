@@ -15,6 +15,10 @@ import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.Color
 import android.graphics.Paint
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.Network
@@ -155,6 +159,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var walkableDiscoveryDone by remember { mutableStateOf(false) }
     var lastDiscoveryCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var permissionRefresh by remember { mutableIntStateOf(0) }
+    var deviceSteps by remember { mutableLongStateOf(0L) }
     var latestSharedRewardId by remember { mutableStateOf<String?>(null) }
     var sharedRewardInitialized by remember { mutableStateOf(false) }
     var visibleMapBounds by remember { mutableStateOf<MapBounds?>(null) }
@@ -408,6 +413,35 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     ?.vibrate(android.os.VibrationEffect.createOneShot(350,android.os.VibrationEffect.DEFAULT_AMPLITUDE))
             }
             if(currentProfile.barkEnabled) runCatching { DogBarkPlayer.play() }
+        }
+    }
+    val activityPermissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted->
+        if(granted)permissionRefresh++
+    }
+
+    DisposableEffect(permissionRefresh){
+        if(Build.VERSION.SDK_INT>=29&&ContextCompat.checkSelfPermission(context,Manifest.permission.ACTIVITY_RECOGNITION)!=PackageManager.PERMISSION_GRANTED){
+            activityPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+            onDispose{}
+        }else{
+            val manager=context.getSystemService(SensorManager::class.java)
+            val sensor=manager?.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+            val prefs=context.getSharedPreferences("fbq_step_counter",Context.MODE_PRIVATE)
+            deviceSteps=prefs.getLong("total",0L)
+            var firstSensorEvent=true
+            val listener=object:SensorEventListener{
+                override fun onAccuracyChanged(sensor:Sensor?,accuracy:Int)=Unit
+                override fun onSensorChanged(event:SensorEvent){
+                    val raw=event.values.firstOrNull()?.toLong()?:return
+                    val previous=prefs.getLong("raw",-1L)
+                    val total=prefs.getLong("total",0L)+(if(!firstSensorEvent&&previous>=0&&raw>=previous)(raw-previous).coerceAtMost(500L) else 0L)
+                    firstSensorEvent=false
+                    prefs.edit().putLong("raw",raw).putLong("total",total).apply()
+                    deviceSteps=total
+                }
+            }
+            if(sensor!=null)manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_NORMAL)
+            onDispose{if(sensor!=null)manager.unregisterListener(listener)}
         }
     }
     var insideForegroundPileZone by remember { mutableStateOf(false) }
@@ -681,7 +715,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 distanceMeters(p.latitude,p.longitude,poi.latitude,poi.longitude)<=100
             }==true }
             GameMenu(
-                profile=currentProfile.copy(boneCount=boneCount.toLong()),
+                profile=currentProfile.copy(boneCount=boneCount.toLong(),deviceSteps=deviceSteps),
                 api=gameApi,shopPoi=nearbyShop,poiSettings=poiSettings,onPoiSettings={poiSettings=it},serverActionsEnabled=isOnline,
                 onAdminMapMode={adminMapMode=true},onClose={menuOpen=false},
                 onBalance={balance->boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=balance)},
@@ -695,7 +729,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     distanceMeters(p.latitude,p.longitude,poi.latitude,poi.longitude)<=100
                 }==true }
                 GamePanelScreen(
-                    panel=panel,profile=currentProfile.copy(boneCount=boneCount.toLong()),api=api,
+                    panel=panel,profile=currentProfile.copy(boneCount=boneCount.toLong(),deviceSteps=deviceSteps),api=api,
                     shopPoi=nearbyShop,poiSettings=poiSettings,onPoiSettings={poiSettings=it},serverActionsEnabled=isOnline,onAdminMapMode={adminMapMode=true;activePanel=null},onNavigate={activePanel=it},onClose={activePanel=null;menuOpen=true},
                     onBalance={balance->boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=balance)},
                     onProfile={fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()}
@@ -780,8 +814,8 @@ private data class CompactAction(val icon:Int,val label:String,val detail:String
                 Image(painterResource(R.drawable.action_panel_pixel),null,Modifier.matchParentSize(),contentScale=ContentScale.FillBounds,colorFilter=if(action.enabled)null else androidx.compose.ui.graphics.ColorFilter.tint(androidx.compose.ui.graphics.Color.Gray))
                 if(actions.size==1){
                     Image(painterResource(action.icon),null,Modifier.align(Alignment.CenterStart).padding(start=30.dp).size(30.dp),contentScale=ContentScale.Fit)
-                    Column(Modifier.align(Alignment.Center).padding(start=48.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=13.sp,maxLines=1);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=9.sp,maxLines=1)}
-                }else Row(Modifier.fillMaxSize().padding(horizontal=7.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(action.icon),null,Modifier.size(30.dp),contentScale=ContentScale.Fit);Column(Modifier.weight(1f).padding(start=5.dp)){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=if(actions.size>3)9.sp else 11.sp,maxLines=1,overflow=TextOverflow.Ellipsis);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=8.sp,maxLines=1)}}
+                    Column(Modifier.align(Alignment.Center).padding(start=48.dp).offset(y=3.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=13.sp,maxLines=1);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=9.sp,maxLines=1)}
+                }else Row(Modifier.fillMaxSize().padding(horizontal=7.dp).offset(y=3.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(action.icon),null,Modifier.size(30.dp),contentScale=ContentScale.Fit);Column(Modifier.weight(1f).padding(start=5.dp)){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=if(actions.size>3)9.sp else 11.sp,maxLines=1,overflow=TextOverflow.Ellipsis);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=8.sp,maxLines=1)}}
             }
         }
     }
@@ -806,9 +840,9 @@ private fun timeUntilRefresh(updatedAt:String):String=runCatching{
         Row(Modifier.matchParentSize()){repeat(9){Spacer(Modifier.weight(1f));Box(Modifier.width(1.dp).fillMaxHeight().padding(vertical=3.dp).background(androidx.compose.ui.graphics.Color(0xAA3B2B08)))};Spacer(Modifier.weight(1f))}
         val levelText="LEVEL $level"
         listOf(-1f to 0f,1f to 0f,0f to -1f,0f to 1f,-1f to -1f,1f to -1f,-1f to 1f,1f to 1f).forEach{(x,y)->
-            Text(levelText,Modifier.align(Alignment.Center).graphicsLayer{translationX=x;translationY=y-1f},color=androidx.compose.ui.graphics.Color.Black,fontSize=9.sp,fontWeight=FontWeight.Black)
+            Text(levelText,Modifier.align(Alignment.Center).graphicsLayer{translationX=x;translationY=y-3f},color=androidx.compose.ui.graphics.Color.Black,fontSize=9.sp,fontWeight=FontWeight.Black)
         }
-        Text(levelText,Modifier.align(Alignment.Center).graphicsLayer{translationY=-1f},color=androidx.compose.ui.graphics.Color.White,fontSize=9.sp,fontWeight=FontWeight.Black)
+        Text(levelText,Modifier.align(Alignment.Center).graphicsLayer{translationY=-3f},color=androidx.compose.ui.graphics.Color.White,fontSize=9.sp,fontWeight=FontWeight.Black)
     }
 }
 
@@ -1370,17 +1404,16 @@ internal fun markerBitmap(context:android.content.Context,id:String):Bitmap {
         return Bitmap.createScaledBitmap(source,112,112,true)
     }
     markerAtlasIndex(id)?.let { index ->
-        val atlas=BitmapFactory.decodeResource(context.resources,R.drawable.marker_atlas_pixel_v1)
-        val column=index%10
-        val row=index/10
-        // The artwork occupies a fixed 1200 x 1200, 10 x 10 contact sheet.
-        // The PNG canvas itself is 1254 px wide/high; dividing that canvas by
-        // ten makes every successive crop drift into the neighbouring sprite.
-        val cellSize=120
-        val left=column*cellSize
-        val top=row*cellSize
-        val cell=Bitmap.createBitmap(atlas,left,top,cellSize,cellSize)
-        return Bitmap.createScaledBitmap(cell,112,112,false)
+        // Every atlas cell is exported as its own resource at build time. The
+        // source sheet is 1254 px (not 1200), so fixed 120 px runtime crops
+        // drifted into neighbouring icons and produced the rotating fragments
+        // seen in the shop.
+        val resourceName="marker_cell_${index.toString().padStart(3,'0')}"
+        val resourceId=context.resources.getIdentifier(resourceName,"drawable",context.packageName)
+        if(resourceId!=0) {
+            val cell=BitmapFactory.decodeResource(context.resources,resourceId)
+            return Bitmap.createScaledBitmap(cell,112,112,false)
+        }
     }
     val size=112;val bitmap=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);val canvas=Canvas(bitmap)
     val paint=Paint(Paint.ANTI_ALIAS_FLAG);val seed=id.hashCode();val palette=intArrayOf(
@@ -1419,15 +1452,10 @@ internal fun markerBitmap(context:android.content.Context,id:String):Bitmap {
 private fun markerAtlasIndex(id:String):Int? {
     fun suffix(prefix:String)=id.removePrefix(prefix).toIntOrNull()?.minus(1)
     return when {
-        id.startsWith("marker_breed_")->suffix("marker_breed_")?.let { catalogIndex ->
-            // The database catalogue is ordered by Swedish breed name, while
-            // the artwork sheet is ordered visually. Keep the label paired
-            // with the matching (or closest available) breed portrait.
-            intArrayOf(
-                0,14,37,34,5,13,8,23,11,3,21,27,4,31,1,2,18,27,
-                39,39,7,16,10,19,27,24,29,28,15,15,26,22,6,30,28,28
-            ).getOrNull(catalogIndex)
-        }
+        // The v0.500 catalogue was deliberately renamed into atlas order.
+        // Keeping the previous remapping here paired the wrong dog with the
+        // label (for example Dobermann/Staffordshire bullterrier).
+        id.startsWith("marker_breed_")->suffix("marker_breed_")?.takeIf{it in 0..39}
         id.startsWith("marker_toy_")->suffix("marker_toy_")?.takeIf{it in 0..19}?.plus(40)
         id.startsWith("marker_paw_")->suffix("marker_paw_")?.takeIf{it in 0..9}?.plus(60)
         // Atlasens sista rader är inte ordnade som katalogens databas-ID:n.
