@@ -668,7 +668,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     )
                 }
             }
-            if(compactActions.isNotEmpty())CompactActionDock(compactActions,Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=19.dp).zIndex(3f))
+            if(compactActions.isNotEmpty())CompactActionDock(compactActions,Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=29.dp).zIndex(3f))
             XpProgressBar(
                 level=currentProfile.level,
                 current=currentProfile.xpCurrentLevel,
@@ -827,8 +827,8 @@ private data class CompactAction(val icon:Int,val label:String,val detail:String
                 Image(painterResource(R.drawable.action_panel_pixel),null,Modifier.matchParentSize(),contentScale=ContentScale.FillBounds,colorFilter=if(action.enabled)null else androidx.compose.ui.graphics.ColorFilter.tint(androidx.compose.ui.graphics.Color.Gray))
                 if(actions.size==1){
                     Image(painterResource(action.icon),null,Modifier.align(Alignment.CenterStart).padding(start=30.dp).size(30.dp),contentScale=ContentScale.Fit)
-                    Column(Modifier.align(Alignment.Center).padding(start=48.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=13.sp,maxLines=1);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=9.sp,maxLines=1)}
-                }else Row(Modifier.fillMaxSize().padding(horizontal=7.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(action.icon),null,Modifier.size(30.dp),contentScale=ContentScale.Fit);Column(Modifier.weight(1f).padding(start=5.dp),verticalArrangement=Arrangement.Center){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=if(actions.size>3)9.sp else 11.sp,maxLines=1,overflow=TextOverflow.Ellipsis);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=8.sp,maxLines=1)}}
+                    Column(Modifier.align(Alignment.Center).padding(start=60.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=13.sp,maxLines=1);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=9.sp,maxLines=1)}
+                }else Row(Modifier.fillMaxSize().padding(horizontal=7.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(action.icon),null,Modifier.size(30.dp),contentScale=ContentScale.Fit);Column(Modifier.weight(1f).padding(start=12.dp),verticalArrangement=Arrangement.Center){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=if(actions.size>3)9.sp else 11.sp,maxLines=1,overflow=TextOverflow.Ellipsis);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=8.sp,maxLines=1)}}
             }
         }
     }
@@ -883,6 +883,7 @@ private fun timeUntilRefresh(updatedAt:String):String=runCatching{
         ){
             Text(
                 "LEVEL $level",
+                modifier=Modifier.offset(y=(-2).dp),
                 color=androidx.compose.ui.graphics.Color.White,
                 fontSize=11.sp,
                 fontWeight=FontWeight.Black,

@@ -271,19 +271,20 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
     BoxWithConstraints(modifier.fillMaxWidth().aspectRatio(.667f),contentAlignment=Alignment.Center){
         Image(painterResource(R.drawable.dog_slot_machine_mobile_v2),null,Modifier.matchParentSize(),contentScale=ContentScale.Fit)
         odds.forEachIndexed{i,line->
-            Text(line,color=PanelCream,fontSize=7.sp,fontWeight=FontWeight.Black,maxLines=1,
-                modifier=Modifier.align(Alignment.TopStart).offset(x=maxWidth*.685f,y=maxHeight*(.305f+i*.061f)).width(maxWidth*.235f),
+            Text(line,color=PanelCream,fontSize=6.5.sp,fontWeight=FontWeight.Black,maxLines=1,
+                modifier=Modifier.align(Alignment.TopStart).offset(x=maxWidth*.684f,y=maxHeight*(.302f+i*.057f)).width(maxWidth*.218f),
                 textAlign=TextAlign.Center)
         }
-        Box(Modifier.align(Alignment.TopStart).offset(x=maxWidth*.17f,y=maxHeight*.31f).width(maxWidth*.39f).height(maxHeight*.28f),contentAlignment=Alignment.Center){
+        Box(Modifier.align(Alignment.TopStart).offset(x=maxWidth*.158f,y=maxHeight*.296f).width(maxWidth*.414f).height(maxHeight*.305f),contentAlignment=Alignment.Center){
             if(boneType>=0){
                 val reelBitmap=remember(boneType){normalizedDrawableBitmap(context,boneDrawable(boneType),128,88,108,58,true)}
-                Image(reelBitmap.asImageBitmap(),null,Modifier.fillMaxSize(.72f),contentScale=ContentScale.Fit)
+                Image(reelBitmap.asImageBitmap(),null,Modifier.fillMaxSize(.68f),contentScale=ContentScale.Fit)
             }else if(!spinning)Text("NITLOTT",color=Color(0xFF8A2B26),fontSize=13.sp,fontWeight=FontWeight.Black)
         }
+        val stakeCenters=listOf(.151f,.382f,.613f,.844f)
         stakes.take(4).forEachIndexed{i,stake->
-            Box(Modifier.align(Alignment.TopStart).offset(x=maxWidth*(.055f+i*.235f),y=maxHeight*.695f)
-                .width(maxWidth*.205f).height(maxHeight*.176f).clickable(enabled=!spinning){onStake(stake)},contentAlignment=Alignment.Center){
+            Box(Modifier.align(Alignment.TopStart).offset(x=maxWidth*(stakeCenters[i]-.095f),y=maxHeight*.695f)
+                .width(maxWidth*.19f).height(maxHeight*.176f).clickable(enabled=!spinning){onStake(stake)},contentAlignment=Alignment.Center){
                 Text(stake.toString(),color=Color.White,fontSize=24.sp,fontWeight=FontWeight.Black,
                     style=LocalTextStyle.current.copy(shadow=Shadow(Color.Black,Offset(2f,2f),1f)))
             }
