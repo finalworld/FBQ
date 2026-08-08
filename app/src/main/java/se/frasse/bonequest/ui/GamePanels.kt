@@ -210,13 +210,15 @@ private fun dogDrawable(context:android.content.Context,breed:Int,stage:Int)=con
 
 @Composable private fun CollectionPanel(api:GameApiRepository) {
     var rows by remember{mutableStateOf<List<BoneCollectionRow>>(emptyList())};var loading by remember{mutableStateOf(true)}
+    val context=LocalContext.current
     LaunchedEffect(Unit){runCatching{api.collection()}.onSuccess{rows=it};loading=false}
     if(loading) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator(color=PanelGold)} else LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) {
         items((0..11).toList()){type->
             val count=rows.firstOrNull{it.boneType==type}?.lifetimeCount?:0
             Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(5.dp)).padding(10.dp),verticalAlignment=Alignment.CenterVertically){
-                Image(painterResource(boneDrawable(type)),null,Modifier.size(58.dp),contentScale=ContentScale.Fit,colorFilter=if(count>0)null else ColorFilter.tint(Color(0xFF5D6263)))
-                Column(Modifier.weight(1f).padding(start=10.dp)){Text(if(count>0) localizedBoneName(LocalContext.current,type) else stringResource(R.string.collection_unknown_bone),color=PanelCream,fontWeight=FontWeight.Bold);Text(stringResource(R.string.collection_value,BONE_VALUES[type]),color=PanelGold)}
+                val normalized=remember(type){normalizedDrawableBitmap(context,boneDrawable(type),128,88,108,58,true)}
+                Image(normalized.asImageBitmap(),null,Modifier.size(62.dp),contentScale=ContentScale.Fit,colorFilter=if(count>0)null else ColorFilter.tint(Color(0xFF5D6263)))
+                Column(Modifier.weight(1f).padding(start=10.dp)){Text(if(count>0) localizedBoneName(context,type) else stringResource(R.string.collection_unknown_bone),color=PanelCream,fontWeight=FontWeight.Bold);Text(stringResource(R.string.collection_value,BONE_VALUES[type]),color=PanelGold)}
                 Text(if(count>0) count.toString() else "?",fontSize=22.sp,color=PanelCream,fontWeight=FontWeight.Black)
             }
         }
@@ -233,22 +235,30 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 }
 
 @Composable private fun HomePanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit){
-    val context=LocalContext.current;val scope=rememberCoroutineScope();var message by remember{mutableStateOf(context.getString(R.string.home_slot_intro))};var pending by remember{mutableStateOf<SlotResult?>(null)};var revealed by remember{mutableStateOf(true)};var error by remember{mutableStateOf(false)}
+    val context=LocalContext.current;val scope=rememberCoroutineScope();var message by remember{mutableStateOf(context.getString(R.string.home_slot_intro))};var pending by remember{mutableStateOf<SlotResult?>(null)};var spinning by remember{mutableStateOf(false)};var error by remember{mutableStateOf(false)}
     var reelBone by remember{mutableIntStateOf(0)};var lastWasLoss by remember{mutableStateOf(false)}
-    fun reveal(){pending?.let{r->lastWasLoss=r.payout==0;message=if(r.payout==0)context.getString(R.string.slot_loss) else context.getString(R.string.slot_win,r.payout,r.multiplier.toString());onBalance(r.balance)};revealed=true;pending=null}
-    LaunchedEffect(pending?.spinId){if(pending!=null){repeat(25){reelBone=(reelBone+1)%12;delay(200)};reveal()}}
+    LaunchedEffect(pending?.spinId){
+        val result=pending?:return@LaunchedEffect
+        spinning=true
+        repeat(21){step->reelBone=(reelBone+1)%12;delay(60L+step*16L)}
+        lastWasLoss=result.payout==0
+        message=if(result.payout==0)context.getString(R.string.slot_loss) else context.getString(R.string.slot_win,result.payout,result.multiplier.toString())
+        onBalance(result.balance)
+        spinning=false
+    }
     Column(verticalArrangement=Arrangement.spacedBy(13.dp)){
         Text(stringResource(if(profile.homeLat==null)R.string.home_not_set else R.string.home_saved_map),color=PanelCream,fontSize=18.sp)
         Button(enabled=pending==null,onClick={scope.launch{runCatching{api.setHome()}.onSuccess{message=context.getString(R.string.home_saved_cooldown);onProfile(api.bootstrap())}.onFailure{message=context.getString(R.string.home_move_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_068))}
         HorizontalDivider();Text(stringResource(R.string.ui_text_020),color=PanelGold,fontWeight=FontWeight.Black,fontSize=20.sp);Text(message,color=if(error)Color(0xFFFF6B5D) else PanelCream)
         DogBoneSlotMachine(
-            boneType=if(lastWasLoss&&pending==null)-1 else reelBone,
+            boneType=if(lastWasLoss&&!spinning&&pending!=null)-1 else reelBone,
             information="Insats",
-            spinning=pending!=null,
+            spinning=spinning,
             stakes=listOf(1,2,5,10),
-            onStake={stake->scope.launch{error=false;runCatching{api.spinHome(stake)}.onSuccess{pending=it;revealed=false;message=context.getString(R.string.slot_spinning)}.onFailure{error=true;message=context.getString(R.string.slot_unavailable)}}}
+            onStake={stake->scope.launch{error=false;lastWasLoss=false;runCatching{api.spinHome(stake)}.onSuccess{pending=it;message=context.getString(R.string.slot_spinning)}.onFailure{error=true;message=context.getString(R.string.slot_unavailable)}}}
         )
-        if(pending!=null)Column(horizontalAlignment=Alignment.CenterHorizontally){LinearProgressIndicator(Modifier.fillMaxWidth(),color=PanelGold);TextButton(onClick={reveal()}){Text(stringResource(R.string.ui_text_030))}}
+        if(spinning)LinearProgressIndicator(Modifier.fillMaxWidth(),color=PanelGold)
+        else if(pending!=null)Button(onClick={pending=null;lastWasLoss=false;message=context.getString(R.string.home_slot_intro)},modifier=Modifier.fillMaxWidth()){Text("OK",fontWeight=FontWeight.Black)}
     }
 }
 
@@ -256,6 +266,7 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
     boneType:Int,information:String,spinning:Boolean,modifier:Modifier=Modifier,
     stakes:List<Int> = emptyList(),onStake:(Int)->Unit={},oddsLines:List<String>?=null
 ){
+    val context=LocalContext.current
     val odds=oddsLines?:listOf("INGEN · 55%","1× · 25%","2× · 15%","5× · 4%","10× · 0,9%","50× · 0,1%")
     BoxWithConstraints(modifier.fillMaxWidth().aspectRatio(.667f),contentAlignment=Alignment.Center){
         Image(painterResource(R.drawable.dog_slot_machine_mobile_v2),null,Modifier.matchParentSize(),contentScale=ContentScale.Fit)
@@ -264,13 +275,15 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
                 modifier=Modifier.align(Alignment.TopStart).offset(x=maxWidth*.685f,y=maxHeight*(.305f+i*.061f)).width(maxWidth*.235f),
                 textAlign=TextAlign.Center)
         }
-        if(spinning)Text("RULLAR…",color=PanelGold,fontSize=12.sp,fontWeight=FontWeight.Black,
-            modifier=Modifier.align(Alignment.TopStart).offset(x=maxWidth*.16f,y=maxHeight*.52f).width(maxWidth*.42f),textAlign=TextAlign.Center)
-        if(boneType<0&&!spinning)Text("NITLOTT",color=Color(0xFF8A2B26),fontSize=13.sp,fontWeight=FontWeight.Black,
-            modifier=Modifier.align(Alignment.TopStart).offset(x=maxWidth*.16f,y=maxHeight*.52f).width(maxWidth*.42f),textAlign=TextAlign.Center)
+        Box(Modifier.align(Alignment.TopStart).offset(x=maxWidth*.17f,y=maxHeight*.31f).width(maxWidth*.39f).height(maxHeight*.28f),contentAlignment=Alignment.Center){
+            if(boneType>=0){
+                val reelBitmap=remember(boneType){normalizedDrawableBitmap(context,boneDrawable(boneType),128,88,108,58,true)}
+                Image(reelBitmap.asImageBitmap(),null,Modifier.fillMaxSize(.72f),contentScale=ContentScale.Fit)
+            }else if(!spinning)Text("NITLOTT",color=Color(0xFF8A2B26),fontSize=13.sp,fontWeight=FontWeight.Black)
+        }
         stakes.take(4).forEachIndexed{i,stake->
-            Box(Modifier.align(Alignment.TopStart).offset(x=maxWidth*(.055f+i*.235f),y=maxHeight*.704f)
-                .width(maxWidth*.205f).height(maxHeight*.165f).clickable(enabled=!spinning){onStake(stake)},contentAlignment=Alignment.Center){
+            Box(Modifier.align(Alignment.TopStart).offset(x=maxWidth*(.055f+i*.235f),y=maxHeight*.695f)
+                .width(maxWidth*.205f).height(maxHeight*.176f).clickable(enabled=!spinning){onStake(stake)},contentAlignment=Alignment.Center){
                 Text(stake.toString(),color=Color.White,fontSize=24.sp,fontWeight=FontWeight.Black,
                     style=LocalTextStyle.current.copy(shadow=Shadow(Color.Black,Offset(2f,2f),1f)))
             }

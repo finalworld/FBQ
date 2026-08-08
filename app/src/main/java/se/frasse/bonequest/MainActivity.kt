@@ -13,6 +13,7 @@ import android.graphics.Canvas
 import android.graphics.BitmapFactory
 import android.graphics.PointF
 import android.graphics.RectF
+import android.graphics.Rect
 import android.graphics.Color
 import android.graphics.Paint
 import android.hardware.Sensor
@@ -41,7 +42,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -140,6 +143,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var pendingPileReward by remember { mutableStateOf<PileResult?>(null) }
     var pileRewardSpinning by remember { mutableStateOf(false) }
     var pendingPuppy by remember { mutableStateOf<PendingPuppy?>(null) }
+    var activeDog by remember { mutableStateOf<DogProfile?>(null) }
+    var dogCardCollapsed by remember { mutableStateOf(false) }
     var pendingPuppyName by remember { mutableStateOf("Valpen") }
     var pileReelBone by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -163,6 +168,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var latestSharedRewardId by remember { mutableStateOf<String?>(null) }
     var sharedRewardInitialized by remember { mutableStateOf(false) }
     var visibleMapBounds by remember { mutableStateOf<MapBounds?>(null) }
+
+    LaunchedEffect(profile.playerId) {
+        gameApi?.let { api -> activeDog=runCatching { api.dogs().firstOrNull { it.isActive } }.getOrNull() }
+    }
 
     BackHandler(enabled = activePanel != null) {
         activePanel = null
@@ -452,7 +461,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     LaunchedEffect(pendingPileReward?.claimId){
         val reward=pendingPileReward?:return@LaunchedEffect
         pileRewardSpinning=true
-        repeat(15){pileReelBone=(pileReelBone+1)%12;delay(200)}
+        repeat(19){step->pileReelBone=(pileReelBone+1)%12;delay(65L+step*18L)}
         status=context.getString(R.string.pile_reward_status,reward.rewardValue,if(reward.isDouble)context.getString(R.string.double_win_suffix) else "")
         pileReelBone=reward.boneType.coerceIn(0,11)
         pileRewardSpinning=false
@@ -532,6 +541,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 onMenu = { menuOpen = true },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
+
+            activeDog?.let { dog ->
+                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=124.dp).zIndex(4f))
+            }
 
             if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=126.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
                 Text(stringResource(R.string.ui_text_049),Modifier.padding(horizontal=12.dp,vertical=7.dp),color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black,fontSize=12.sp)
@@ -814,8 +827,8 @@ private data class CompactAction(val icon:Int,val label:String,val detail:String
                 Image(painterResource(R.drawable.action_panel_pixel),null,Modifier.matchParentSize(),contentScale=ContentScale.FillBounds,colorFilter=if(action.enabled)null else androidx.compose.ui.graphics.ColorFilter.tint(androidx.compose.ui.graphics.Color.Gray))
                 if(actions.size==1){
                     Image(painterResource(action.icon),null,Modifier.align(Alignment.CenterStart).padding(start=30.dp).size(30.dp),contentScale=ContentScale.Fit)
-                    Column(Modifier.align(Alignment.Center).padding(start=48.dp).offset(y=3.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=13.sp,maxLines=1);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=9.sp,maxLines=1)}
-                }else Row(Modifier.fillMaxSize().padding(horizontal=7.dp).offset(y=3.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(action.icon),null,Modifier.size(30.dp),contentScale=ContentScale.Fit);Column(Modifier.weight(1f).padding(start=5.dp)){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=if(actions.size>3)9.sp else 11.sp,maxLines=1,overflow=TextOverflow.Ellipsis);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=8.sp,maxLines=1)}}
+                    Column(Modifier.align(Alignment.Center).padding(start=48.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=13.sp,maxLines=1);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=9.sp,maxLines=1)}
+                }else Row(Modifier.fillMaxSize().padding(horizontal=7.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(action.icon),null,Modifier.size(30.dp),contentScale=ContentScale.Fit);Column(Modifier.weight(1f).padding(start=5.dp),verticalArrangement=Arrangement.Center){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=if(actions.size>3)9.sp else 11.sp,maxLines=1,overflow=TextOverflow.Ellipsis);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=8.sp,maxLines=1)}}
             }
         }
     }
@@ -835,14 +848,59 @@ private fun timeUntilRefresh(updatedAt:String):String=runCatching{
 
 @Composable private fun XpProgressBar(level:Int,current:Double,needed:Double,modifier:Modifier=Modifier){
     val progress=if(level>=100)1f else if(needed<=0)0f else (current/needed).toFloat().coerceIn(0f,1f)
-    Box(modifier.fillMaxWidth().height(15.dp).background(androidx.compose.ui.graphics.Color(0xFF11191D))){
-        Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(androidx.compose.ui.graphics.Color(0xFFFFC31F)))
-        Row(Modifier.matchParentSize()){repeat(9){Spacer(Modifier.weight(1f));Box(Modifier.width(1.dp).fillMaxHeight().padding(vertical=3.dp).background(androidx.compose.ui.graphics.Color(0xAA3B2B08)))};Spacer(Modifier.weight(1f))}
-        val levelText="LEVEL $level"
-        listOf(-1f to 0f,1f to 0f,0f to -1f,0f to 1f,-1f to -1f,1f to -1f,-1f to 1f,1f to 1f).forEach{(x,y)->
-            Text(levelText,Modifier.align(Alignment.Center).graphicsLayer{translationX=x;translationY=y-3f},color=androidx.compose.ui.graphics.Color.Black,fontSize=9.sp,fontWeight=FontWeight.Black)
+    val gold=androidx.compose.ui.graphics.Color(0xFFFFC21A)
+    val goldLight=androidx.compose.ui.graphics.Color(0xFFFFDA3A)
+    val frame=androidx.compose.ui.graphics.Color(0xFF17120B)
+    val frameGold=androidx.compose.ui.graphics.Color(0xFF9B6A16)
+    Box(modifier.fillMaxWidth().height(26.dp),contentAlignment=Alignment.Center){
+        Box(
+            Modifier.fillMaxWidth().height(16.dp)
+                .background(frame,RoundedCornerShape(2.dp))
+                .padding(2.dp)
+                .background(androidx.compose.ui.graphics.Color(0xFF2A2418),RoundedCornerShape(1.dp))
+                .padding(1.dp)
+        ){
+            Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(goldLight,RoundedCornerShape(1.dp)))
+            Row(Modifier.matchParentSize()){
+                repeat(9){
+                    Spacer(Modifier.weight(1f))
+                    Box(Modifier.width(1.dp).fillMaxHeight().padding(vertical=2.dp).background(androidx.compose.ui.graphics.Color(0xCC211A0C)))
+                }
+                Spacer(Modifier.weight(1f))
+            }
         }
-        Text(levelText,Modifier.align(Alignment.Center).graphicsLayer{translationY=-3f},color=androidx.compose.ui.graphics.Color.White,fontSize=9.sp,fontWeight=FontWeight.Black)
+        Box(
+            Modifier.align(Alignment.Center).width(112.dp).height(25.dp)
+                .background(frame,RoundedCornerShape(4.dp))
+                .padding(2.dp)
+                .background(gold,RoundedCornerShape(3.dp))
+                .padding(2.dp)
+                .background(androidx.compose.ui.graphics.Color(0xFF11191D),RoundedCornerShape(2.dp))
+                .drawBehind{
+                    drawRoundRect(frameGold,cornerRadius=androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),style=Stroke(width=1.dp.toPx()))
+                },
+            contentAlignment=Alignment.Center
+        ){
+            Text(
+                "LEVEL $level",
+                color=androidx.compose.ui.graphics.Color.White,
+                fontSize=11.sp,
+                fontWeight=FontWeight.Black,
+                maxLines=1
+            )
+        }
+    }
+}
+
+@Composable private fun ActiveDogHudCard(dog:DogProfile,collapsed:Boolean,onToggle:()->Unit,modifier:Modifier=Modifier){
+    val context=LocalContext.current
+    val dogRes=remember(dog.breed,dog.stage){context.resources.getIdentifier("dog_${dog.breed.coerceIn(0,9).toString().padStart(2,'0')}_stage_${(dog.stage.coerceIn(0,5)-1).coerceAtLeast(0)}","drawable",context.packageName)}
+    Column(modifier.width(116.dp),horizontalAlignment=Alignment.End){
+        if(!collapsed)Box(Modifier.fillMaxWidth().height(92.dp).background(androidx.compose.ui.graphics.Color(0xFF101719)).drawBehind{drawRect(androidx.compose.ui.graphics.Color(0xFFC68A27),style=Stroke(2.dp.toPx()))},contentAlignment=Alignment.Center){
+            if(dogRes!=0)Image(painterResource(dogRes),dog.name,Modifier.fillMaxSize().padding(5.dp),contentScale=ContentScale.Fit)
+            Text(dog.name,Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xCC101719)).padding(vertical=2.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontSize=10.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1)
+        }
+        Box(Modifier.width(42.dp).height(24.dp).background(androidx.compose.ui.graphics.Color(0xFF101719),RoundedCornerShape(bottomStart=7.dp)).clickable(onClick=onToggle),contentAlignment=Alignment.Center){Text(if(collapsed)"▼" else "▲",color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=12.sp,fontWeight=FontWeight.Black)}
     }
 }
 
@@ -1207,9 +1265,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
         R.drawable.bone_10, R.drawable.bone_11, R.drawable.bone_12
     )
     boneDrawables.forEachIndexed { index, drawableId ->
-        BitmapFactory.decodeResource(context.resources, drawableId)?.let { bitmap ->
-            style.addImage(BONE_IMAGE_IDS[index], bitmap)
-        }
+        style.addImage(BONE_IMAGE_IDS[index], normalizedDrawableBitmap(context,drawableId,128,88,108,58,true))
     }
 
     if (style.getSource(PLAYER_SOURCE_ID) == null) {
@@ -1250,7 +1306,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
         }
     }
     val pileDrawables = intArrayOf(R.drawable.dirt_pile_01,R.drawable.dirt_pile_02,R.drawable.dirt_pile_03,R.drawable.dirt_pile_04,R.drawable.dirt_pile_05)
-    pileDrawables.forEachIndexed { index, id -> BitmapFactory.decodeResource(context.resources,id)?.let { style.addImage(PILE_IMAGE_IDS[index],it) } }
+    pileDrawables.forEachIndexed { index, id -> style.addImage(PILE_IMAGE_IDS[index],normalizedDrawableBitmap(context,id,140,104,116,88,false)) }
     if (style.getSource(PILE_SOURCE_ID)==null) style.addSource(GeoJsonSource(PILE_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
     PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.68f)),PLAYER_LAYER_ID) }
 
@@ -1308,6 +1364,18 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
             .withFilter(Expression.eq(Expression.get("hasGameShop"),Expression.literal(true)))
             .withProperties(PropertyFactory.iconImage(POI_SHOP_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconOffset(arrayOf(22f,-16f)),PropertyFactory.iconSize(.48f))
     )
+}
+
+internal fun normalizedDrawableBitmap(context:android.content.Context,drawableId:Int,canvasWidth:Int,canvasHeight:Int,targetWidth:Int,targetHeight:Int,solidAlpha:Boolean):Bitmap{
+    val source=BitmapFactory.decodeResource(context.resources,drawableId).copy(Bitmap.Config.ARGB_8888,true)
+    var left=source.width;var top=source.height;var right=-1;var bottom=-1
+    for(y in 0 until source.height)for(x in 0 until source.width){if(Color.alpha(source.getPixel(x,y))>10){left=minOf(left,x);top=minOf(top,y);right=maxOf(right,x);bottom=maxOf(bottom,y)}}
+    if(right<left||bottom<top)return Bitmap.createScaledBitmap(source,canvasWidth,canvasHeight,true)
+    val crop=Bitmap.createBitmap(source,left,top,right-left+1,bottom-top+1)
+    if(solidAlpha)for(y in 0 until crop.height)for(x in 0 until crop.width){val c=crop.getPixel(x,y);val a=Color.alpha(c);if(a>10)crop.setPixel(x,y,Color.argb(255,Color.red(c),Color.green(c),Color.blue(c)))else crop.setPixel(x,y,Color.TRANSPARENT)}
+    val scale=minOf(targetWidth.toFloat()/crop.width,targetHeight.toFloat()/crop.height)
+    val w=(crop.width*scale).toInt().coerceAtLeast(1);val h=(crop.height*scale).toInt().coerceAtLeast(1)
+    val out=Bitmap.createBitmap(canvasWidth,canvasHeight,Bitmap.Config.ARGB_8888);Canvas(out).drawBitmap(crop,null,Rect((canvasWidth-w)/2,(canvasHeight-h)/2,(canvasWidth+w)/2,(canvasHeight+h)/2),Paint(Paint.ANTI_ALIAS_FLAG).apply{isFilterBitmap=false});return out
 }
 
 private fun pileFeatureCollection(piles: List<DirtPile>): FeatureCollection = FeatureCollection.fromFeatures(piles.map { pile -> Feature.fromGeometry(Point.fromLngLat(pile.longitude,pile.latitude)).apply { addStringProperty(PILE_ID_PROPERTY,pile.id); addNumberProperty("pileType",pile.type.coerceIn(0,4)) } })
