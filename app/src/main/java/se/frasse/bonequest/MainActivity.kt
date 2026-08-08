@@ -538,12 +538,13 @@ internal fun GameScreen(profile:SessionBootstrap) {
             TopHud(
                 count = boneCount,
                 totalMeters = currentProfile.totalMeters,
+                steps = currentProfile.deviceSteps,
                 onMenu = { menuOpen = true },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
 
             activeDog?.let { dog ->
-                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=124.dp).zIndex(4f))
+                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=118.dp,end=8.dp).zIndex(4f))
             }
 
             if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=126.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
@@ -915,7 +916,7 @@ private fun timeUntilRefresh(updatedAt:String):String=runCatching{
 }
 
 @Composable
-private fun TopHud(count:Int,totalMeters:Long,onMenu:()->Unit,modifier:Modifier=Modifier) {
+private fun TopHud(count:Int,totalMeters:Long,steps:Long,onMenu:()->Unit,modifier:Modifier=Modifier) {
     val locale=Locale.forLanguageTag("sv-SE")
     val distanceFormat=NumberFormat.getNumberInstance(locale).apply {
         minimumFractionDigits=1
@@ -933,17 +934,18 @@ private fun TopHud(count:Int,totalMeters:Long,onMenu:()->Unit,modifier:Modifier=
             Box(Modifier.fillMaxHeight().fillMaxWidth(.18f).clickable(onClick=onMenu))
             Column(
                 Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.365f)
-                    .padding(start=10.dp,end=13.dp,top=22.dp,bottom=16.dp),
+                    .padding(start=10.dp,end=13.dp,top=17.dp,bottom=12.dp),
                 verticalArrangement=Arrangement.SpaceEvenly
             ) {
                 SpikedHudStat(
-                    R.drawable.bone_01,
+                    R.drawable.hud_stat_bone,
                     NumberFormat.getIntegerInstance(locale).format(count)
                 )
                 SpikedHudStat(
-                    R.drawable.marker_default_paw,
+                    R.drawable.hud_stat_distance,
                     "${distanceFormat.format(totalMeters/1000.0)} KM"
                 )
+                SpikedHudStat(R.drawable.hud_stat_steps,NumberFormat.getIntegerInstance(locale).format(steps))
             }
         }
     }
@@ -1307,7 +1309,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
         }
     }
     val pileDrawables = intArrayOf(R.drawable.dirt_pile_01,R.drawable.dirt_pile_02,R.drawable.dirt_pile_03,R.drawable.dirt_pile_04,R.drawable.dirt_pile_05)
-    pileDrawables.forEachIndexed { index, id -> style.addImage(PILE_IMAGE_IDS[index],normalizedDrawableBitmap(context,id,140,104,116,88,false)) }
+    pileDrawables.forEachIndexed { index, id -> style.addImage(PILE_IMAGE_IDS[index],normalizedDrawableBitmap(context,id,148,112,120,92,true)) }
     if (style.getSource(PILE_SOURCE_ID)==null) style.addSource(GeoJsonSource(PILE_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
     PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.68f)),PLAYER_LAYER_ID) }
 
