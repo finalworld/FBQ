@@ -1364,11 +1364,13 @@ internal fun markerBitmap(context:android.content.Context,id:String):Bitmap {
         val atlas=BitmapFactory.decodeResource(context.resources,R.drawable.marker_atlas_pixel_v1)
         val column=index%10
         val row=index/10
-        val left=(column*atlas.width/10.0).toInt()
-        val top=(row*atlas.height/10.0).toInt()
-        val right=(((column+1)*atlas.width/10.0).toInt()).coerceAtMost(atlas.width)
-        val bottom=(((row+1)*atlas.height/10.0).toInt()).coerceAtMost(atlas.height)
-        val cell=Bitmap.createBitmap(atlas,left,top,right-left,bottom-top)
+        // The artwork occupies a fixed 1200 x 1200, 10 x 10 contact sheet.
+        // The PNG canvas itself is 1254 px wide/high; dividing that canvas by
+        // ten makes every successive crop drift into the neighbouring sprite.
+        val cellSize=120
+        val left=column*cellSize
+        val top=row*cellSize
+        val cell=Bitmap.createBitmap(atlas,left,top,cellSize,cellSize)
         return Bitmap.createScaledBitmap(cell,112,112,false)
     }
     val size=112;val bitmap=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);val canvas=Canvas(bitmap)
@@ -1408,7 +1410,15 @@ internal fun markerBitmap(context:android.content.Context,id:String):Bitmap {
 private fun markerAtlasIndex(id:String):Int? {
     fun suffix(prefix:String)=id.removePrefix(prefix).toIntOrNull()?.minus(1)
     return when {
-        id.startsWith("marker_breed_")->suffix("marker_breed_")?.takeIf{it in 0..35}
+        id.startsWith("marker_breed_")->suffix("marker_breed_")?.let { catalogIndex ->
+            // The database catalogue is ordered by Swedish breed name, while
+            // the artwork sheet is ordered visually. Keep the label paired
+            // with the matching (or closest available) breed portrait.
+            intArrayOf(
+                0,14,37,34,5,13,8,23,11,3,21,27,4,31,1,2,18,27,
+                39,39,7,16,10,19,27,24,29,28,15,15,26,22,6,30,28,28
+            ).getOrNull(catalogIndex)
+        }
         id.startsWith("marker_toy_")->suffix("marker_toy_")?.takeIf{it in 0..19}?.plus(40)
         id.startsWith("marker_paw_")->suffix("marker_paw_")?.takeIf{it in 0..9}?.plus(60)
         // Atlasens sista rader är inte ordnade som katalogens databas-ID:n.
