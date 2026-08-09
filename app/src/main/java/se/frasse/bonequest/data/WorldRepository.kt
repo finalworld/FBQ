@@ -62,7 +62,7 @@ data class PileResult(
     @SerialName("bone_type") val boneType:Int,val quantity:Int,val cost:Int,
     @SerialName("reward_value") val rewardValue:Int,val balance:Long,
     @SerialName("is_double") val isDouble:Boolean
-)
+):java.io.Serializable
 
 data class WorldSnapshot(val bones:List<Bone>,val piles:List<DirtPile>)
 data class MapBounds(val minLat:Double,val minLon:Double,val maxLat:Double,val maxLon:Double)

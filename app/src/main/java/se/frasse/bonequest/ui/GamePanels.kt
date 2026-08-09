@@ -219,12 +219,28 @@ private fun dogDrawable(context:android.content.Context,breed:Int,stage:Int)=con
 }
 
 private fun mergePileEvents(events:List<PlayerEvent>):List<PlayerEvent>{
-    val result=mutableListOf<PlayerEvent>();var i=0
-    while(i<events.size){val first=events[i];if(first.category=="pile"&&i+1<events.size&&events[i+1].category=="pile"){
-        val second=events[i+1];val a=runCatching{java.time.Instant.parse(first.createdAt)}.getOrNull();val b=runCatching{java.time.Instant.parse(second.createdAt)}.getOrNull()
-        if(a!=null&&b!=null&&kotlin.math.abs(java.time.Duration.between(a,b).seconds)<=8){val cost=kotlin.math.abs(listOf(first.boneDelta,second.boneDelta).filter{it<0}.sum());val win=listOf(first.boneDelta,second.boneDelta).filter{it>0}.sum();result+=first.copy(title="Jordhög · kostade $cost ben · vann $win ben",boneDelta=win-cost,xpDelta=first.xpDelta+second.xpDelta);i+=2;continue}}
-        result+=first;i++
-    };return result
+    val result=mutableListOf<PlayerEvent>()
+    val used=mutableSetOf<Int>()
+    events.forEachIndexed { index, first ->
+        if(index in used)return@forEachIndexed
+        if(first.category!="pile"){result+=first;return@forEachIndexed}
+        val firstTime=runCatching{java.time.Instant.parse(first.createdAt)}.getOrNull()
+        val match=((index+1) until minOf(events.size,index+7)).firstOrNull { candidateIndex ->
+            val candidate=events[candidateIndex]
+            val candidateTime=runCatching{java.time.Instant.parse(candidate.createdAt)}.getOrNull()
+            candidateIndex !in used&&candidate.category=="pile"&&firstTime!=null&&candidateTime!=null&&
+                kotlin.math.abs(java.time.Duration.between(firstTime,candidateTime).seconds)<=45&&
+                ((first.boneDelta<0&&candidate.boneDelta>=0)||(candidate.boneDelta<0&&first.boneDelta>=0))
+        }
+        if(match==null)result+=first else {
+            used+=match
+            val pair=listOf(first,events[match])
+            val cost=kotlin.math.abs(pair.filter{it.boneDelta<0}.sumOf{it.boneDelta})
+            val win=pair.filter{it.boneDelta>0}.sumOf{it.boneDelta}
+            result+=first.copy(title="Jordhög · kostade $cost ben · vann $win ben",boneDelta=win-cost,xpDelta=pair.sumOf{it.xpDelta})
+        }
+    }
+    return result
 }
 
 @Composable private fun CollectionPanel(api:GameApiRepository) {
@@ -287,24 +303,33 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 ){
     val context=LocalContext.current
     val odds=oddsLines?:listOf("INGEN · 55%","1× · 25%","2× · 15%","5× · 4%","10× · 0,9%","50× · 0,1%")
-    BoxWithConstraints(modifier.fillMaxWidth().aspectRatio(.667f),contentAlignment=Alignment.Center){
-        Image(painterResource(R.drawable.dog_slot_machine_mobile_v2),null,Modifier.matchParentSize(),contentScale=ContentScale.Fit)
-        Column(Modifier.align(Alignment.TopStart).offset(x=maxWidth*.684f,y=maxHeight*.292f).width(maxWidth*.218f).height(maxHeight*.32f),verticalArrangement=Arrangement.SpaceEvenly){odds.forEach{line->Text(line,Modifier.fillMaxWidth(),color=PanelCream,fontSize=6.sp,fontWeight=FontWeight.Black,maxLines=1,textAlign=TextAlign.Center)}}
-        Box(Modifier.align(Alignment.TopStart).offset(x=maxWidth*.158f,y=maxHeight*.296f).width(maxWidth*.414f).height(maxHeight*.305f),contentAlignment=Alignment.Center){
-            if(boneType>=0){
-                val reelBitmap=remember(boneType){normalizedDrawableBitmap(context,boneDrawable(boneType),128,88,108,58,true)}
-                Image(reelBitmap.asImageBitmap(),null,Modifier.fillMaxSize(.68f),contentScale=ContentScale.Fit)
-            }else if(!spinning)Text("NITLOTT",color=Color(0xFF8A2B26),fontSize=13.sp,fontWeight=FontWeight.Black)
+    val wood=Color(0xFF4B2818);val darkWood=Color(0xFF24140E);val trim=Color(0xFFE2A737);val reel=Color(0xFFFFEAC0)
+    Column(modifier.fillMaxWidth().background(darkWood,RoundedCornerShape(12.dp)).border(3.dp,trim,RoundedCornerShape(12.dp)).padding(8.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
+        Box(Modifier.fillMaxWidth().height(44.dp).background(wood,RoundedCornerShape(7.dp)).border(2.dp,trim,RoundedCornerShape(7.dp)),contentAlignment=Alignment.Center){
+            Text("FRASSES VINSTAUTOMAT",color=PanelCream,fontWeight=FontWeight.Black,fontSize=17.sp)
         }
-        Row(Modifier.align(Alignment.TopStart).offset(x=maxWidth*.055f,y=maxHeight*.695f).width(maxWidth*.89f).height(maxHeight*.176f)){
-        stakes.take(4).forEach{stake->
-            Box(Modifier.weight(1f).fillMaxHeight().clickable(enabled=!spinning){onStake(stake)},contentAlignment=Alignment.Center){
-                Text(stake.toString(),color=Color.White,fontSize=24.sp,fontWeight=FontWeight.Black,
-                    style=LocalTextStyle.current.copy(shadow=Shadow(Color.Black,Offset(2f,2f),1f)))
+        Row(Modifier.fillMaxWidth().height(178.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+            Box(Modifier.weight(1.55f).fillMaxHeight().background(reel,RoundedCornerShape(9.dp)).border(4.dp,Color(0xFF7A431E),RoundedCornerShape(9.dp)),contentAlignment=Alignment.Center){
+                if(boneType>=0){
+                    val reelBitmap=remember(boneType){normalizedDrawableBitmap(context,boneDrawable(boneType),180,112,150,78,true)}
+                    Image(reelBitmap.asImageBitmap(),null,Modifier.fillMaxWidth(.82f).height(92.dp),contentScale=ContentScale.Fit)
+                }else if(!spinning)Text("NITLOTT",color=Color(0xFF8A2B26),fontSize=21.sp,fontWeight=FontWeight.Black)
+                if(spinning)Text("RULLAR…",Modifier.align(Alignment.BottomCenter).padding(8.dp),color=Color(0xFF7A431E),fontSize=10.sp,fontWeight=FontWeight.Black)
             }
-        }}
-        Text(if(spinning)"RULLAR…" else information,color=PanelCream,fontSize=8.sp,fontWeight=FontWeight.Black,
-            modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=5.dp),textAlign=TextAlign.Center,maxLines=1)
+            Column(Modifier.weight(.85f).fillMaxHeight().background(wood,RoundedCornerShape(7.dp)).border(2.dp,trim,RoundedCornerShape(7.dp)).padding(horizontal=5.dp,vertical=4.dp),verticalArrangement=Arrangement.SpaceEvenly){
+                Text("VINSTER",Modifier.fillMaxWidth(),color=PanelGold,fontSize=10.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center)
+                odds.forEach{line->Text(line,Modifier.fillMaxWidth(),color=PanelCream,fontSize=8.sp,fontWeight=FontWeight.Bold,maxLines=1,textAlign=TextAlign.Center)}
+            }
+        }
+        Row(Modifier.fillMaxWidth().height(62.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+            stakes.take(4).forEachIndexed{index,stake->
+                val buttonColor=listOf(Color(0xFF344E25),Color(0xFF176DA5),Color(0xFF694092),Color(0xFFC65813))[index]
+                Box(Modifier.weight(1f).fillMaxHeight().background(buttonColor,RoundedCornerShape(8.dp)).border(2.dp,trim,RoundedCornerShape(8.dp)).clickable(enabled=!spinning){onStake(stake)},contentAlignment=Alignment.Center){
+                    Text(stake.toString(),color=Color.White,fontSize=24.sp,fontWeight=FontWeight.Black,style=LocalTextStyle.current.copy(shadow=Shadow(Color.Black,Offset(2f,2f),1f)),textAlign=TextAlign.Center)
+                }
+            }
+        }
+        Text(if(spinning)"RULLAR…" else information,Modifier.fillMaxWidth(),color=PanelCream,fontSize=10.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1)
     }
 }
 

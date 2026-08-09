@@ -86,7 +86,7 @@ object OverpassClient {
             .distinctBy { "%.5f_%.5f".format(java.util.Locale.US, it.latitude, it.longitude) }
             .filter {
                 val d = distanceMeters(center.latitude, center.longitude, it.latitude, it.longitude)
-                d in 35.0..radiusMeters.toDouble()
+                d in 0.0..radiusMeters.toDouble()
             }
 
         val picked = mutableListOf<GeoPoint>()
@@ -98,21 +98,21 @@ object OverpassClient {
             var anchor = center
             var anchorRadius = 0.0
             repeat(4) { step ->
-                val minStep = if (step == 0) 140.0 else 230.0
-                val maxStep = if (step == 0) 270.0 else 380.0
+                val minStep = if (step == 0) 0.0 else 100.0
+                val maxStep = if (step == 0) 220.0 else 360.0
                 val choice = usable.asSequence()
                     .filter { candidate ->
                         val stepDistance = distanceMeters(anchor.latitude, anchor.longitude, candidate.latitude, candidate.longitude)
                         val radius = distanceMeters(center.latitude, center.longitude, candidate.latitude, candidate.longitude)
                         val angle = bearingDegrees(center, candidate)
                         stepDistance in minStep..maxStep &&
-                            radius >= anchorRadius + (if (step == 0) 0.0 else 120.0) &&
+                            radius >= anchorRadius + (if (step == 0) 0.0 else 70.0) &&
                             angleDifference(angle, targetAngle) <= 35.0 &&
                             picked.all { distanceMeters(it.latitude, it.longitude, candidate.latitude, candidate.longitude) >= 170.0 }
                     }
                     .minByOrNull { candidate ->
                         val stepDistance = distanceMeters(anchor.latitude, anchor.longitude, candidate.latitude, candidate.longitude)
-                        abs(stepDistance - if (step == 0) 210.0 else 300.0) + angleDifference(bearingDegrees(center, candidate), targetAngle) * 3.0
+                        abs(stepDistance - if (step == 0) 90.0 else 240.0) + angleDifference(bearingDegrees(center, candidate), targetAngle) * 3.0
                     }
                 if (choice != null) {
                     picked += choice

@@ -140,13 +140,13 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var selectedPoi by remember { mutableStateOf<MapPoi?>(null) }
     var insideForegroundBoneZone by remember { mutableStateOf(false) }
     var homeInfoOpen by remember { mutableStateOf(false) }
-    var pendingPileReward by remember { mutableStateOf<PileResult?>(null) }
-    var pileRewardSpinning by remember { mutableStateOf(false) }
+    var pendingPileReward by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<PileResult?>(null) }
+    var pileRewardSpinning by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var pendingPuppy by remember { mutableStateOf<PendingPuppy?>(null) }
     var activeDog by remember { mutableStateOf<DogProfile?>(null) }
-    var dogCardCollapsed by remember { mutableStateOf(false) }
+    var dogCardCollapsed by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var pendingPuppyName by remember { mutableStateOf("Valpen") }
-    var pileReelBone by remember { mutableIntStateOf(0) }
+    var pileReelBone by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
     var profileOpen by remember { mutableStateOf(false) }
     var currentProfile by remember(profile.playerId) { mutableStateOf(profile) }
@@ -435,6 +435,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
         }else{
             val manager=context.getSystemService(SensorManager::class.java)
             val sensor=manager?.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+                ?:manager?.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
             val prefs=context.getSharedPreferences("fbq_step_counter",Context.MODE_PRIVATE)
             deviceSteps=prefs.getLong("total",0L)
             var firstSensorEvent=true
@@ -443,7 +444,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 override fun onSensorChanged(event:SensorEvent){
                     val raw=event.values.firstOrNull()?.toLong()?:return
                     val previous=prefs.getLong("raw",-1L)
-                    val total=prefs.getLong("total",0L)+(if(!firstSensorEvent&&previous>=0&&raw>=previous)(raw-previous).coerceAtMost(500L) else 0L)
+                    val delta=if(event.sensor.type==Sensor.TYPE_STEP_DETECTOR) 1L else if(previous>=0&&raw>=previous)(raw-previous).coerceAtMost(500L) else 0L
+                    val total=prefs.getLong("total",0L)+delta
                     firstSensorEvent=false
                     prefs.edit().putLong("raw",raw).putLong("total",total).apply()
                     deviceSteps=total
@@ -538,13 +540,13 @@ internal fun GameScreen(profile:SessionBootstrap) {
             TopHud(
                 count = boneCount,
                 totalMeters = currentProfile.totalMeters,
-                steps = currentProfile.deviceSteps,
+                steps = deviceSteps,
                 onMenu = { menuOpen = true },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
 
             activeDog?.let { dog ->
-                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=118.dp,end=8.dp).zIndex(4f))
+                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=112.dp,end=10.dp).zIndex(4f))
             }
 
             if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=126.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
@@ -669,7 +671,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     )
                 }
             }
-            if(compactActions.isNotEmpty())CompactActionDock(compactActions,Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=29.dp).zIndex(3f))
+            if(compactActions.isNotEmpty())CompactActionDock(compactActions,Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom=34.dp).zIndex(3f))
             XpProgressBar(
                 level=currentProfile.level,
                 current=currentProfile.xpCurrentLevel,
@@ -828,8 +830,8 @@ private data class CompactAction(val icon:Int,val label:String,val detail:String
                 Image(painterResource(R.drawable.action_panel_pixel),null,Modifier.matchParentSize(),contentScale=ContentScale.FillBounds,colorFilter=if(action.enabled)null else androidx.compose.ui.graphics.ColorFilter.tint(androidx.compose.ui.graphics.Color.Gray))
                 if(actions.size==1){
                     Image(painterResource(action.icon),null,Modifier.align(Alignment.CenterStart).padding(start=30.dp).size(30.dp),contentScale=ContentScale.Fit)
-                    Column(Modifier.align(Alignment.Center).padding(start=60.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=13.sp,maxLines=1);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=9.sp,maxLines=1)}
-                }else Row(Modifier.fillMaxSize().padding(horizontal=7.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(action.icon),null,Modifier.size(30.dp),contentScale=ContentScale.Fit);Column(Modifier.weight(1f).padding(start=12.dp),verticalArrangement=Arrangement.Center){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=if(actions.size>3)9.sp else 11.sp,maxLines=1,overflow=TextOverflow.Ellipsis);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=8.sp,maxLines=1)}}
+                    Column(Modifier.align(Alignment.Center),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=13.sp,maxLines=1);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=9.sp,maxLines=1)}
+                }else Row(Modifier.fillMaxSize().padding(horizontal=9.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(action.icon),null,Modifier.size(28.dp),contentScale=ContentScale.Fit);Column(Modifier.weight(1f).padding(start=9.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Text(action.label,color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontWeight=FontWeight.Black,fontSize=if(actions.size>3)9.sp else 11.sp,maxLines=1,overflow=TextOverflow.Ellipsis,textAlign=TextAlign.Center);Text(action.detail,color=androidx.compose.ui.graphics.Color(0xFFFFE5B0),fontWeight=FontWeight.Bold,fontSize=8.sp,maxLines=1,textAlign=TextAlign.Center)}}
             }
         }
     }
@@ -876,7 +878,7 @@ private fun timeUntilRefresh(updatedAt:String):String=runCatching{
                 .padding(2.dp)
                 .background(gold,RoundedCornerShape(3.dp))
                 .padding(2.dp)
-                .background(androidx.compose.ui.graphics.Color(0xFF11191D),RoundedCornerShape(2.dp))
+                .background(androidx.compose.ui.graphics.Color(0xD92A1B0B),RoundedCornerShape(2.dp))
                 .drawBehind{
                     drawRoundRect(frameGold,cornerRadius=androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),style=Stroke(width=1.dp.toPx()))
                 },
@@ -884,7 +886,7 @@ private fun timeUntilRefresh(updatedAt:String):String=runCatching{
         ){
             Text(
                 "LEVEL $level",
-                modifier=Modifier.offset(y=(-2).dp),
+                modifier=Modifier.offset(y=(-4).dp),
                 color=androidx.compose.ui.graphics.Color.White,
                 fontSize=11.sp,
                 fontWeight=FontWeight.Black,
@@ -897,8 +899,8 @@ private fun timeUntilRefresh(updatedAt:String):String=runCatching{
 @Composable private fun ActiveDogHudCard(dog:DogProfile,collapsed:Boolean,onToggle:()->Unit,modifier:Modifier=Modifier){
     val context=LocalContext.current
     val dogRes=remember(dog.breed,dog.stage){context.resources.getIdentifier("dog_${dog.breed.coerceIn(0,9).toString().padStart(2,'0')}_stage_${(dog.stage.coerceIn(0,5)-1).coerceAtLeast(0)}","drawable",context.packageName)}
-    Column(modifier.width(116.dp),horizontalAlignment=Alignment.End){
-        if(!collapsed)Box(Modifier.fillMaxWidth().height(92.dp).background(androidx.compose.ui.graphics.Color(0xFF101719)).drawBehind{drawRect(androidx.compose.ui.graphics.Color(0xFFC68A27),style=Stroke(2.dp.toPx()))},contentAlignment=Alignment.Center){
+    Column(modifier.width(104.dp),horizontalAlignment=Alignment.End){
+        if(!collapsed)Box(Modifier.fillMaxWidth().height(86.dp).background(androidx.compose.ui.graphics.Color(0xFF101719)).drawBehind{drawRect(androidx.compose.ui.graphics.Color(0xFFC68A27),style=Stroke(2.dp.toPx()))},contentAlignment=Alignment.Center){
             if(dogRes!=0)Image(painterResource(dogRes),dog.name,Modifier.fillMaxSize().padding(5.dp),contentScale=ContentScale.Fit)
             Text(dog.name,Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xCC101719)).padding(vertical=2.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontSize=10.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1)
         }
@@ -934,7 +936,7 @@ private fun TopHud(count:Int,totalMeters:Long,steps:Long,onMenu:()->Unit,modifie
             Box(Modifier.fillMaxHeight().fillMaxWidth(.18f).clickable(onClick=onMenu))
             Column(
                 Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.365f)
-                    .padding(start=10.dp,end=13.dp,top=17.dp,bottom=12.dp),
+                    .padding(start=10.dp,end=14.dp,top=12.dp,bottom=12.dp),
                 verticalArrangement=Arrangement.SpaceEvenly
             ) {
                 SpikedHudStat(
@@ -1309,9 +1311,9 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
         }
     }
     val pileDrawables = intArrayOf(R.drawable.dirt_pile_01,R.drawable.dirt_pile_02,R.drawable.dirt_pile_03,R.drawable.dirt_pile_04,R.drawable.dirt_pile_05)
-    pileDrawables.forEachIndexed { index, id -> style.addImage(PILE_IMAGE_IDS[index],normalizedDrawableBitmap(context,id,148,112,120,92,true)) }
+    pileDrawables.forEachIndexed { index, id -> style.addImage(PILE_IMAGE_IDS[index],normalizedDrawableBitmap(context,id,180,148,112,86,true)) }
     if (style.getSource(PILE_SOURCE_ID)==null) style.addSource(GeoJsonSource(PILE_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
-    PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.68f)),PLAYER_LAYER_ID) }
+    PILE_LAYER_IDS.forEachIndexed { index, layerId -> if(style.getLayer(layerId)==null) style.addLayerBelow(SymbolLayer(layerId,PILE_SOURCE_ID).withFilter(Expression.eq(Expression.get("pileType"),Expression.literal(index))).withProperties(PropertyFactory.iconImage(PILE_IMAGE_IDS[index]),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(0.72f)),PLAYER_LAYER_ID) }
 
     val poiDrawables = intArrayOf(R.drawable.poi_dog_park, R.drawable.poi_pet_shop, R.drawable.poi_veterinary, R.drawable.poi_grooming)
     poiDrawables.forEachIndexed { index, id ->
