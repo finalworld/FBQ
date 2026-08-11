@@ -345,7 +345,25 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
 }
 
 @Composable private fun SettingsPanel(profile:SessionBootstrap,api:GameApiRepository,initialPoiSettings:PoiSettings,onPoiSettings:(PoiSettings)->Unit,onProfile:(SessionBootstrap)->Unit) {
-    val context=LocalContext.current;val scope=rememberCoroutineScope();var walking by remember{mutableStateOf(profile.walkingModeEnabled)};var bark by remember{mutableStateOf(profile.barkEnabled)};var vibration by remember{mutableStateOf(profile.vibrationEnabled)};var poiSettings by remember(initialPoiSettings){mutableStateOf(initialPoiSettings)};var saved by remember{mutableStateOf<String?>(null)};var deleting by remember{mutableStateOf(false)};var confirmation by remember{mutableStateOf("")}
+    val context=LocalContext.current;val scope=rememberCoroutineScope();var walking by remember{mutableStateOf(profile.walkingModeEnabled)};var bark by remember{mutableStateOf(profile.barkEnabled)};var vibration by remember{mutableStateOf(profile.vibrationEnabled)};var poiSettings by remember(initialPoiSettings){mutableStateOf(initialPoiSettings)};var saved by remember{mutableStateOf<String?>(null)};var deleting by remember{mutableStateOf(false)};var confirmation by remember{mutableStateOf("")};var gameSettingsReady by remember{mutableStateOf(false)};var poiSettingsReady by remember{mutableStateOf(false)}
+    LaunchedEffect(walking,bark,vibration){
+        if(!gameSettingsReady){gameSettingsReady=true;return@LaunchedEffect}
+        delay(150)
+        WalkingPreferences(context).apply{setEnabled(walking);setBarkEnabled(bark);setVibrationEnabled(vibration)}
+        onProfile(profile.copy(walkingModeEnabled=walking,barkEnabled=bark,vibrationEnabled=vibration))
+        runCatching{if(walking)WalkingServiceController.start(context) else WalkingServiceController.stop(context)}
+        runCatching{api.updateSettings(walking,bark,vibration);api.bootstrap()}
+            .onSuccess{onProfile(it);saved=context.getString(R.string.settings_saved)}
+            .onFailure{saved=context.getString(R.string.settings_save_failed)}
+    }
+    LaunchedEffect(poiSettings){
+        if(!poiSettingsReady){poiSettingsReady=true;return@LaunchedEffect}
+        delay(150)
+        onPoiSettings(poiSettings)
+        runCatching{api.updatePoiSettings(poiSettings)}
+            .onSuccess{saved=context.getString(R.string.settings_saved)}
+            .onFailure{saved=context.getString(R.string.settings_save_failed)}
+    }
     Column(verticalArrangement=Arrangement.spacedBy(13.dp)){
         SettingToggle(stringResource(R.string.settings_walking_title),stringResource(R.string.settings_walking_help),walking){walking=it}
         SettingToggle(stringResource(R.string.settings_bark_title),stringResource(R.string.settings_bark_help),bark){bark=it}
@@ -355,7 +373,6 @@ private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone
         SettingToggle(stringResource(R.string.settings_pet_shops),stringResource(R.string.settings_pet_shops_help),poiSettings.showPetShops){poiSettings=poiSettings.copy(showPetShops=it)}
         SettingToggle(stringResource(R.string.settings_vets),stringResource(R.string.settings_vets_help),poiSettings.showVets){poiSettings=poiSettings.copy(showVets=it)}
         SettingToggle(stringResource(R.string.settings_services),stringResource(R.string.settings_services_help),poiSettings.showGrooming){poiSettings=poiSettings.copy(showGrooming=it)}
-        Button(onClick={scope.launch{runCatching{api.updateSettings(walking,bark,vibration);api.updatePoiSettings(poiSettings)}.onSuccess{WalkingPreferences(context).apply{setEnabled(walking);setBarkEnabled(bark);setVibrationEnabled(vibration)};if(walking)WalkingServiceController.start(context) else WalkingServiceController.stop(context);onPoiSettings(poiSettings);onProfile(api.bootstrap());saved=context.getString(R.string.settings_saved)}.onFailure{saved=context.getString(R.string.settings_save_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_062))}
         saved?.let{Text(it,color=PanelGold)};Spacer(Modifier.weight(1f));OutlinedButton(onClick={scope.launch{api.signOut()}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_036))};TextButton(onClick={deleting=true},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_058),color=Color(0xFFFF6B5D))}
     }
     if(deleting) AlertDialog(onDismissRequest={deleting=false},title={Text(stringResource(R.string.ui_text_059))},text={Column{Text(stringResource(R.string.ui_text_022));OutlinedTextField(confirmation,{confirmation=it},Modifier.fillMaxWidth())}},confirmButton={Button(enabled=confirmation==profile.displayName,onClick={scope.launch{runCatching{api.deleteAccount(confirmation)}.onSuccess{api.signOut()}.onFailure{saved=context.getString(R.string.account_delete_failed)};deleting=false}}){Text(stringResource(R.string.ui_text_057))}},dismissButton={TextButton(onClick={deleting=false}){Text(stringResource(R.string.ui_text_006))}})
