@@ -564,7 +564,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             )
 
             activeDog?.let { dog ->
-                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=99.dp,end=8.dp).zIndex(4f))
+                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=96.dp,end=5.dp).zIndex(4f))
             }
 
             if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=126.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
@@ -919,14 +919,30 @@ private fun timeUntilRefresh(updatedAt:String,hours:Long=10):String=runCatching{
     val dogRes=remember(dog.breed,dog.stage){context.resources.getIdentifier("dog_${dog.breed.coerceIn(0,9).toString().padStart(2,'0')}_stage_${(dog.stage.coerceIn(0,5)-1).coerceAtLeast(0)}","drawable",context.packageName)}
     val parchment=androidx.compose.ui.graphics.Color(0xFFE7C77E)
     val ink=androidx.compose.ui.graphics.Color(0xFF191711)
-    Column(modifier.width(104.dp),horizontalAlignment=Alignment.End){
-        if(!collapsed)Column(Modifier.fillMaxWidth().height(88.dp).background(parchment).drawBehind{drawRect(androidx.compose.ui.graphics.Color(0xFF8B5A18),style=Stroke(2.dp.toPx()))},horizontalAlignment=Alignment.CenterHorizontally){
-            Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal=5.dp,vertical=2.dp),contentAlignment=Alignment.Center){
+    val frame=androidx.compose.ui.graphics.Color(0xFF6B3B12)
+    val gold=androidx.compose.ui.graphics.Color(0xFFD99A2B)
+    Column(modifier.width(142.dp),horizontalAlignment=Alignment.End){
+        if(!collapsed)Column(
+            Modifier.fillMaxWidth().height(150.dp)
+                .background(parchment,RoundedCornerShape(topStart=5.dp,bottomStart=5.dp))
+                .drawBehind{
+                    drawRoundRect(frame,cornerRadius=androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()),style=Stroke(4.dp.toPx()))
+                    drawRoundRect(gold,topLeft=androidx.compose.ui.geometry.Offset(4.dp.toPx(),4.dp.toPx()),size=androidx.compose.ui.geometry.Size(size.width-8.dp.toPx(),size.height-8.dp.toPx()),cornerRadius=androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),style=Stroke(1.dp.toPx()))
+                },
+            horizontalAlignment=Alignment.CenterHorizontally
+        ){
+            Box(Modifier.weight(1f).fillMaxWidth().padding(start=8.dp,end=8.dp,top=8.dp),contentAlignment=Alignment.Center){
                 if(dogRes!=0)Image(painterResource(dogRes),dog.name,Modifier.fillMaxSize(),contentScale=ContentScale.Fit)
             }
-            Text(dog.name,Modifier.fillMaxWidth().padding(horizontal=4.dp,vertical=3.dp),color=ink,fontSize=9.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1,overflow=TextOverflow.Ellipsis)
+            Text(dog.name,Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=8.dp),color=ink,fontSize=13.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1,overflow=TextOverflow.Ellipsis)
         }
-        Box(Modifier.width(42.dp).height(22.dp).background(parchment,RoundedCornerShape(bottomStart=7.dp)).clickable(onClick=onToggle),contentAlignment=Alignment.Center){Text(if(collapsed)"▼" else "▲",color=ink,fontSize=10.sp,fontWeight=FontWeight.Black)}
+        Box(
+            Modifier.width(54.dp).height(30.dp)
+                .background(parchment,RoundedCornerShape(bottomStart=9.dp))
+                .drawBehind{drawLine(frame,androidx.compose.ui.geometry.Offset.Zero,androidx.compose.ui.geometry.Offset(size.width,0f),2.dp.toPx())}
+                .clickable(onClick=onToggle),
+            contentAlignment=Alignment.Center
+        ){Text(if(collapsed)"▼" else "▲",color=ink,fontSize=13.sp,fontWeight=FontWeight.Black)}
     }
 }
 
@@ -958,7 +974,7 @@ private fun TopHud(count:Int,totalMeters:Long,steps:Long,onMenu:()->Unit,modifie
             Box(Modifier.fillMaxHeight().fillMaxWidth(.18f).clickable(onClick=onMenu))
             Column(
                 Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.365f)
-                    .padding(start=8.dp,end=11.dp,top=6.dp,bottom=7.dp),
+                    .padding(start=9.dp,end=10.dp,top=8.dp,bottom=8.dp),
                 verticalArrangement=Arrangement.SpaceEvenly
             ) {
                 SpikedHudStat(
@@ -977,13 +993,13 @@ private fun TopHud(count:Int,totalMeters:Long,steps:Long,onMenu:()->Unit,modifie
 
 @Composable private fun SpikedHudStat(icon:Int,value:String){
     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-        Image(painterResource(icon),null,Modifier.size(18.dp),contentScale=ContentScale.Fit)
+        Image(painterResource(icon),null,Modifier.size(25.dp),contentScale=ContentScale.Fit)
         Text(
             value,
-            Modifier.weight(1f).padding(start=6.dp),
+            Modifier.weight(1f).padding(start=8.dp),
             color=androidx.compose.ui.graphics.Color(0xFF191711),
             fontWeight=FontWeight.Black,
-            fontSize=if(value.length>11) 9.sp else 11.sp,
+            fontSize=if(value.length>11) 10.sp else 13.sp,
             maxLines=1,
             textAlign=TextAlign.Start,
             softWrap=false
