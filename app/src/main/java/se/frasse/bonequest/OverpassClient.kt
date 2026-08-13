@@ -45,14 +45,28 @@ object OverpassClient {
             out geom;
         """.trimIndent()
         val encoded = URLEncoder.encode(query, "UTF-8")
-        val connection = (URL("https://overpass-api.de/api/interpreter?data=$encoded").openConnection() as HttpURLConnection).apply {
-            connectTimeout = 20_000
-            readTimeout = 30_000
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "FrassesBoneQuest/0.200 (Android test build)")
+        val endpoints = listOf(
+            "https://overpass-api.de/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter",
+            "https://overpass.nchc.org.tw/api/interpreter"
+        )
+        var responseText:String?=null
+        var lastFailure:Throwable?=null
+        for(endpoint in endpoints){
+            val attempt=runCatching{
+                val connection=(URL("$endpoint?data=$encoded").openConnection() as HttpURLConnection).apply{
+                    connectTimeout=15_000
+                    readTimeout=30_000
+                    requestMethod="GET"
+                    setRequestProperty("User-Agent","FrassesBoneQuest/0.500 (Android)")
+                }
+                if(connection.responseCode !in 200..299)error("Overpass svarade ${connection.responseCode}")
+                connection.inputStream.bufferedReader().use{it.readText()}
+            }
+            if(attempt.isSuccess){responseText=attempt.getOrThrow();break}
+            lastFailure=attempt.exceptionOrNull()
         }
-        if (connection.responseCode !in 200..299) error("Overpass svarade ${connection.responseCode}")
-        val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+        val json = JSONObject(responseText ?: throw (lastFailure ?: IllegalStateException("Ingen Overpass-server svarade")))
 
         // Densify every usable walking way. This gives enough candidates to create
         // several breadcrumb trails instead of one lonely distant bone.

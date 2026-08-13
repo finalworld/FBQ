@@ -163,6 +163,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var poiDiscoveryDone by remember { mutableStateOf(false) }
     var walkableDiscoveryDone by remember { mutableStateOf(false) }
     var lastDiscoveryCenter by remember { mutableStateOf<GeoPoint?>(null) }
+    var lastWalkableDiscoveryAttemptAt by remember { mutableLongStateOf(0L) }
     var permissionRefresh by remember { mutableIntStateOf(0) }
     var deviceSteps by remember { mutableLongStateOf(0L) }
     var latestSharedRewardId by remember { mutableStateOf<String?>(null) }
@@ -331,22 +332,39 @@ internal fun GameScreen(profile:SessionBootstrap) {
                             point,location.accuracy,location.bearing,location.speed.takeIf { location.hasSpeed() }
                         ) }.isSuccess
                         val movedToNewArea=lastDiscoveryCenter?.let{distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>1_000}?:true
-                        if(movedToNewArea){poiDiscoveryDone=false;walkableDiscoveryDone=false;lastDiscoveryCenter=point}
+                        if(movedToNewArea){
+                            poiDiscoveryDone=false
+                            walkableDiscoveryDone=false
+                            lastWalkableDiscoveryAttemptAt=0L
+                            lastDiscoveryCenter=point
+                        }
                         if(location.accuracy<=30&&!poiDiscoveryDone&&gameApi!=null){
                             poiDiscoveryDone=true
                             runCatching{OverpassClient.discoverDogPois(point)}.onSuccess{found->
                                 if(found.isNotEmpty())runCatching{gameApi.syncDiscoveredPois(found)}
                             }.onFailure{poiDiscoveryDone=false}
                         }
-                        if(location.accuracy<=30&&!walkableDiscoveryDone&&gameApi!=null){
-                            walkableDiscoveryDone=true
-                            runCatching{OverpassClient.generateBones(point)}.onSuccess{walkable->
-                                if(walkable.isNotEmpty()){
-                                    runCatching{gameApi.syncWalkableSpawnPoints(walkable)}
-                                    runCatching{worldRepository.updatePresence(point,location.accuracy,location.bearing,location.speed.takeIf{location.hasSpeed()})}
-                                    runCatching{worldRepository.loadNearby(point)}.onSuccess{snapshot->bones=snapshot.bones;piles=snapshot.piles}
-                                }
-                            }.onFailure{walkableDiscoveryDone=false}
+                        val discoveryNow=System.currentTimeMillis()
+                        if(location.accuracy<=30&&!walkableDiscoveryDone&&gameApi!=null&&discoveryNow-lastWalkableDiscoveryAttemptAt>=20_000){
+                            lastWalkableDiscoveryAttemptAt=discoveryNow
+                            runCatching{
+                                val walkable=OverpassClient.generateBones(point)
+                                check(walkable.isNotEmpty()){ "Inga gångbara spawnpunkter hittades" }
+                                gameApi.syncWalkableSpawnPoints(walkable)
+                                worldRepository.updatePresence(point,location.accuracy,location.bearing,location.speed.takeIf{location.hasSpeed()})
+                                worldRepository.loadNearby(point)
+                            }.onSuccess{snapshot->
+                                walkableDiscoveryDone=true
+                                bones=snapshot.bones
+                                piles=snapshot.piles
+                                lastWorldCenter=point
+                                lastWorldLoadAt=System.currentTimeMillis()
+                            }.onFailure{
+                                // Keep the area open for an automatic retry. Previously a
+                                // single temporary Overpass/Supabase failure could leave an
+                                // entire town empty until the player moved another kilometre.
+                                walkableDiscoveryDone=false
+                            }
                         }
                         if (needsReload && System.currentTimeMillis()-lastWorldLoadAt>5_000) {
                             loadingBones=true
@@ -518,7 +536,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                         val distance = player?.let { p ->
                             distanceMeters(p.latitude, p.longitude, bone.latitude, bone.longitude).toInt()
                         }
-                        status = context.getString(R.string.bone_tap_info,localizedBoneName(context,bone.type).uppercase(),boneValue(bone.type),distance?.let { context.getString(R.string.distance_meters_short,it) } ?: context.getString(R.string.unknown_distance))+bone.updatedAt?.let{" · Byter plats om ${timeUntilRefresh(it)}"}.orEmpty()
+                        status = context.getString(R.string.bone_tap_info,localizedBoneName(context,bone.type).uppercase(),boneValue(bone.type),distance?.let { context.getString(R.string.distance_meters_short,it) } ?: context.getString(R.string.unknown_distance))+bone.updatedAt?.let{" · Byter plats om ${timeUntilRefresh(it,5)}"}.orEmpty()
                     }
                 },
                 onPlayerTapped = { activePanel = GamePanel.PROFILE },
@@ -546,7 +564,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             )
 
             activeDog?.let { dog ->
-                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=112.dp,end=10.dp).zIndex(4f))
+                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=99.dp,end=8.dp).zIndex(4f))
             }
 
             if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=126.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
@@ -843,10 +861,10 @@ private fun ConnectivityManager.isCurrentlyOnline():Boolean {
     return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)&&caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }
 
-private fun timeUntilRefresh(updatedAt:String):String=runCatching{
-    val seconds=java.time.Duration.between(java.time.Instant.now(),java.time.Instant.parse(updatedAt).plus(java.time.Duration.ofHours(10))).seconds.coerceAtLeast(0)
-    val hours=seconds/3600;val minutes=(seconds%3600)/60
-    when{hours>0->"${hours}t ${minutes}min";minutes>0->"${minutes}min";else->"snart"}
+private fun timeUntilRefresh(updatedAt:String,hours:Long=10):String=runCatching{
+    val seconds=java.time.Duration.between(java.time.Instant.now(),java.time.Instant.parse(updatedAt).plus(java.time.Duration.ofHours(hours))).seconds.coerceAtLeast(0)
+    val remainingHours=seconds/3600;val minutes=(seconds%3600)/60
+    when{remainingHours>0->"${remainingHours}t ${minutes}min";minutes>0->"${minutes}min";else->"snart"}
 }.getOrDefault("snart")
 
 @Composable private fun XpProgressBar(level:Int,current:Double,needed:Double,modifier:Modifier=Modifier){
@@ -899,12 +917,16 @@ private fun timeUntilRefresh(updatedAt:String):String=runCatching{
 @Composable private fun ActiveDogHudCard(dog:DogProfile,collapsed:Boolean,onToggle:()->Unit,modifier:Modifier=Modifier){
     val context=LocalContext.current
     val dogRes=remember(dog.breed,dog.stage){context.resources.getIdentifier("dog_${dog.breed.coerceIn(0,9).toString().padStart(2,'0')}_stage_${(dog.stage.coerceIn(0,5)-1).coerceAtLeast(0)}","drawable",context.packageName)}
+    val parchment=androidx.compose.ui.graphics.Color(0xFFE7C77E)
+    val ink=androidx.compose.ui.graphics.Color(0xFF191711)
     Column(modifier.width(104.dp),horizontalAlignment=Alignment.End){
-        if(!collapsed)Box(Modifier.fillMaxWidth().height(86.dp).background(androidx.compose.ui.graphics.Color(0xFF101719)).drawBehind{drawRect(androidx.compose.ui.graphics.Color(0xFFC68A27),style=Stroke(2.dp.toPx()))},contentAlignment=Alignment.Center){
-            if(dogRes!=0)Image(painterResource(dogRes),dog.name,Modifier.fillMaxSize().padding(5.dp),contentScale=ContentScale.Fit)
-            Text(dog.name,Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xCC101719)).padding(vertical=2.dp),color=androidx.compose.ui.graphics.Color(0xFFFFD78D),fontSize=10.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1)
+        if(!collapsed)Column(Modifier.fillMaxWidth().height(88.dp).background(parchment).drawBehind{drawRect(androidx.compose.ui.graphics.Color(0xFF8B5A18),style=Stroke(2.dp.toPx()))},horizontalAlignment=Alignment.CenterHorizontally){
+            Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal=5.dp,vertical=2.dp),contentAlignment=Alignment.Center){
+                if(dogRes!=0)Image(painterResource(dogRes),dog.name,Modifier.fillMaxSize(),contentScale=ContentScale.Fit)
+            }
+            Text(dog.name,Modifier.fillMaxWidth().padding(horizontal=4.dp,vertical=3.dp),color=ink,fontSize=9.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1,overflow=TextOverflow.Ellipsis)
         }
-        Box(Modifier.width(42.dp).height(24.dp).background(androidx.compose.ui.graphics.Color(0xFF101719),RoundedCornerShape(bottomStart=7.dp)).clickable(onClick=onToggle),contentAlignment=Alignment.Center){Text(if(collapsed)"▼" else "▲",color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=12.sp,fontWeight=FontWeight.Black)}
+        Box(Modifier.width(42.dp).height(22.dp).background(parchment,RoundedCornerShape(bottomStart=7.dp)).clickable(onClick=onToggle),contentAlignment=Alignment.Center){Text(if(collapsed)"▼" else "▲",color=ink,fontSize=10.sp,fontWeight=FontWeight.Black)}
     }
 }
 
@@ -936,7 +958,7 @@ private fun TopHud(count:Int,totalMeters:Long,steps:Long,onMenu:()->Unit,modifie
             Box(Modifier.fillMaxHeight().fillMaxWidth(.18f).clickable(onClick=onMenu))
             Column(
                 Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.365f)
-                    .padding(start=10.dp,end=14.dp,top=12.dp,bottom=12.dp),
+                    .padding(start=8.dp,end=11.dp,top=6.dp,bottom=7.dp),
                 verticalArrangement=Arrangement.SpaceEvenly
             ) {
                 SpikedHudStat(
@@ -955,14 +977,13 @@ private fun TopHud(count:Int,totalMeters:Long,steps:Long,onMenu:()->Unit,modifie
 
 @Composable private fun SpikedHudStat(icon:Int,value:String){
     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-        if(icon==R.drawable.marker_default_paw) Text("👣",Modifier.size(29.dp).padding(2.dp).graphicsLayer(rotationZ=45f),fontSize=20.sp)
-        else Image(painterResource(icon),null,Modifier.size(27.dp),contentScale=ContentScale.Fit)
+        Image(painterResource(icon),null,Modifier.size(18.dp),contentScale=ContentScale.Fit)
         Text(
             value,
-            Modifier.weight(1f).padding(start=8.dp),
+            Modifier.weight(1f).padding(start=6.dp),
             color=androidx.compose.ui.graphics.Color(0xFF191711),
             fontWeight=FontWeight.Black,
-            fontSize=if(value.length>11) 11.sp else 13.sp,
+            fontSize=if(value.length>11) 9.sp else 11.sp,
             maxLines=1,
             textAlign=TextAlign.Start,
             softWrap=false
