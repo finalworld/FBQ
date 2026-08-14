@@ -5,11 +5,23 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.put
 import java.util.UUID
+
+private val rpcJson = Json { ignoreUnknownKeys = true }
+
+private inline fun <reified T> decodeRpcObject(raw:String):T {
+    val element=rpcJson.parseToJsonElement(raw)
+    val objectElement=if(element is JsonArray) element.firstOrNull()
+        ?: error("Databasen returnerade ett tomt svar") else element
+    return rpcJson.decodeFromString(objectElement.toString())
+}
 
 @Serializable data class BoneCollectionRow(
     @SerialName("bone_type") val boneType:Int,
@@ -157,14 +169,20 @@ class GameApiRepository(private val client:SupabaseClient) {
     suspend fun eventLog(category:String?=null):List<PlayerEvent> = client.postgrest.rpc("get_my_event_log",buildJsonObject {
         if(category==null)put("p_category",kotlinx.serialization.json.JsonNull) else put("p_category",category);put("p_limit",100)
     }).decodeList()
-    suspend fun treasureHunt():TreasureHuntState = client.postgrest.rpc("get_treasure_hunt_state").decodeSingle()
+    suspend fun treasureHunt():TreasureHuntState {
+        val response=client.postgrest.rpc("get_treasure_hunt_state")
+        return decodeRpcObject(response.data)
+    }
     suspend fun startTreasureHunt(lengthKm:Int) = client.postgrest.rpc("start_treasure_hunt",buildJsonObject {
         put("p_length_km",lengthKm);put("p_points",buildJsonArray{})
     })
     suspend fun claimTreasureCheckpoint(id:String) = client.postgrest.rpc("claim_treasure_checkpoint",buildJsonObject { put("p_checkpoint_id",id) })
     suspend fun abortTreasureHunt() = client.postgrest.rpc("abort_treasure_hunt")
     suspend fun rerollTreasureHunt() = client.postgrest.rpc("reroll_treasure_hunt")
-    suspend fun huntTeam():HuntTeamState = client.postgrest.rpc("get_hunt_team_state").decodeSingle()
+    suspend fun huntTeam():HuntTeamState {
+        val response=client.postgrest.rpc("get_hunt_team_state")
+        return decodeRpcObject(response.data)
+    }
     suspend fun createHuntTeam() = client.postgrest.rpc("create_hunt_team")
     suspend fun inviteToHuntTeam(playerId:String) = client.postgrest.rpc("invite_to_hunt_team",buildJsonObject{put("p_player_id",playerId)})
     suspend fun respondHuntTeamInvite(inviteId:String,accept:Boolean) = client.postgrest.rpc("respond_hunt_team_invite",buildJsonObject{put("p_invite_id",inviteId);put("p_accept",accept)})

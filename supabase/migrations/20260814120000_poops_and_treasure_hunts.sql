@@ -118,13 +118,19 @@ create table if not exists public.player_treasure_frames(player_id uuid referenc
 
 alter table public.hunt_teams enable row level security;alter table public.hunt_team_members enable row level security;alter table public.hunt_team_invites enable row level security;
 alter table public.treasure_hunts enable row level security;alter table public.treasure_hunt_participants enable row level security;alter table public.treasure_checkpoints enable row level security;alter table public.treasure_checkpoint_progress enable row level security;alter table public.player_treasure_frames enable row level security;
-create policy hunt_team_member_read on public.hunt_teams for select to authenticated using(exists(select 1 from public.hunt_team_members m where m.team_id=id and m.player_id=auth.uid()));
-create policy hunt_members_read on public.hunt_team_members for select to authenticated using(player_id=auth.uid() or exists(select 1 from public.hunt_team_members me where me.team_id=hunt_team_members.team_id and me.player_id=auth.uid()));
+create or replace function private.is_hunt_team_member(p_team_id uuid,p_player_id uuid default auth.uid()) returns boolean
+language sql stable security definer set search_path='' as $$select exists(select 1 from public.hunt_team_members m where m.team_id=p_team_id and m.player_id=p_player_id)$$;
+create or replace function private.is_treasure_hunt_participant(p_hunt_id uuid,p_player_id uuid default auth.uid()) returns boolean
+language sql stable security definer set search_path='' as $$select exists(select 1 from public.treasure_hunt_participants p where p.hunt_id=p_hunt_id and p.player_id=p_player_id)$$;
+revoke all on function private.is_hunt_team_member(uuid,uuid),private.is_treasure_hunt_participant(uuid,uuid) from public;
+grant execute on function private.is_hunt_team_member(uuid,uuid),private.is_treasure_hunt_participant(uuid,uuid) to authenticated;
+create policy hunt_team_member_read on public.hunt_teams for select to authenticated using(private.is_hunt_team_member(id));
+create policy hunt_members_read on public.hunt_team_members for select to authenticated using(private.is_hunt_team_member(team_id));
 create policy hunt_invites_read on public.hunt_team_invites for select to authenticated using(invited_player_id=auth.uid() or invited_by=auth.uid());
-create policy hunts_read on public.treasure_hunts for select to authenticated using(exists(select 1 from public.treasure_hunt_participants p where p.hunt_id=id and p.player_id=auth.uid()));
-create policy hunt_participants_read on public.treasure_hunt_participants for select to authenticated using(exists(select 1 from public.treasure_hunt_participants me where me.hunt_id=treasure_hunt_participants.hunt_id and me.player_id=auth.uid()));
-create policy checkpoints_read on public.treasure_checkpoints for select to authenticated using(exists(select 1 from public.treasure_hunt_participants p where p.hunt_id=treasure_checkpoints.hunt_id and p.player_id=auth.uid()));
-create policy progress_read on public.treasure_checkpoint_progress for select to authenticated using(exists(select 1 from public.treasure_hunt_participants p where p.hunt_id=treasure_checkpoint_progress.hunt_id and p.player_id=auth.uid()));
+create policy hunts_read on public.treasure_hunts for select to authenticated using(private.is_treasure_hunt_participant(id));
+create policy hunt_participants_read on public.treasure_hunt_participants for select to authenticated using(private.is_treasure_hunt_participant(hunt_id));
+create policy checkpoints_read on public.treasure_checkpoints for select to authenticated using(private.is_treasure_hunt_participant(hunt_id));
+create policy progress_read on public.treasure_checkpoint_progress for select to authenticated using(private.is_treasure_hunt_participant(hunt_id));
 create policy frames_owner_read on public.player_treasure_frames for select to authenticated using(player_id=auth.uid());
 revoke insert,update,delete on public.hunt_teams,public.hunt_team_members,public.hunt_team_invites,public.treasure_hunts,public.treasure_hunt_participants,public.treasure_checkpoints,public.treasure_checkpoint_progress,public.player_treasure_frames from anon,authenticated;
 
@@ -180,7 +186,10 @@ begin
   return jsonb_build_object('claimed',true,'sequence',c.sequence);
 end $$;
 
-create or replace function public.abort_treasure_hunt() returns void language plpgsql security definer set search_path='' as $$ update public.treasure_hunts set status='aborted' where owner_player_id=auth.uid() and status='active' $$;
+create or replace function public.abort_treasure_hunt() returns void language plpgsql security definer set search_path='' as $$
+begin
+  update public.treasure_hunts set status='aborted' where owner_player_id=auth.uid() and status='active';
+end $$;
 create or replace function public.get_treasure_hunt_state() returns jsonb language sql stable security definer set search_path='' as $$
 select coalesce((select jsonb_build_object('active',true,'id',h.id,'length_km',h.length_km,'cost',h.cost,'xp_reward',h.xp_reward,'owner_player_id',h.owner_player_id,'checkpoints',(select jsonb_agg(jsonb_build_object('id',c.id,'sequence',c.sequence,'latitude',c.latitude,'longitude',c.longitude,'claimed',exists(select 1 from public.treasure_checkpoint_progress p where p.checkpoint_id=c.id and p.player_id=auth.uid())) order by c.sequence) from public.treasure_checkpoints c where c.hunt_id=h.id)) from public.treasure_hunts h join public.treasure_hunt_participants hp on hp.hunt_id=h.id where hp.player_id=auth.uid() and h.status='active' order by h.started_at desc limit 1),jsonb_build_object('active',false,'checkpoints','[]'::jsonb)) $$;
 
@@ -289,7 +298,7 @@ create or replace function public.get_hunt_team_state() returns jsonb language s
 with mine as(select m.team_id,t.leader_id from public.hunt_team_members m join public.hunt_teams t on t.id=m.team_id where m.player_id=auth.uid()), me as(select * from public.player_presence where player_id=auth.uid())
 select jsonb_build_object(
  'team_id',(select team_id from mine),'leader_id',(select leader_id from mine),'is_leader',coalesce((select leader_id=auth.uid() from mine),false),
- 'members',coalesce((select jsonb_agg(jsonb_build_object('player_id',m.player_id,'display_name',p.display_name,'level',coalesce(p.level,1),'is_leader',m.player_id=x.leader_id) order by m.joined_at) from mine x join public.hunt_team_members m on m.team_id=x.team_id join public.profiles p on p.id=m.player_id),'[]'::jsonb),
+ 'members',coalesce((select jsonb_agg(jsonb_build_object('player_id',m.player_id,'display_name',p.display_name,'level',coalesce(p.player_level,1),'is_leader',m.player_id=x.leader_id) order by m.joined_at) from mine x join public.hunt_team_members m on m.team_id=x.team_id join public.profiles p on p.id=m.player_id),'[]'::jsonb),
  'invites',coalesce((select jsonb_agg(jsonb_build_object('id',i.id,'team_id',i.team_id,'leader_name',p.display_name)) from public.hunt_team_invites i join public.profiles p on p.id=i.invited_by where i.invited_player_id=auth.uid() and i.status='pending'),'[]'::jsonb),
  'nearby',coalesce((select jsonb_agg(jsonb_build_object('player_id',pp.player_id,'display_name',pr.display_name,'distance_m',round(private.distance_meters(me.latitude,me.longitude,pp.latitude,pp.longitude)))) from me join public.player_presence pp on pp.player_id<>auth.uid() and pp.updated_at>now()-interval '2 minutes' join public.profiles pr on pr.id=pp.player_id where private.distance_meters(me.latitude,me.longitude,pp.latitude,pp.longitude)<=200 and not exists(select 1 from public.hunt_team_members hm where hm.player_id=pp.player_id)),'[]'::jsonb)
 ) $$;
