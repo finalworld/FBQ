@@ -42,7 +42,7 @@ import kotlinx.coroutines.withContext
 import se.frasse.bonequest.walking.WalkingPreferences
 import se.frasse.bonequest.walking.WalkingServiceController
 
-enum class GamePanel { PROFILE, COLLECTION, EQUIPMENT, DOGS, EVENT_LOG, FLOCKS, HOME, SETTINGS, ADMIN, SHOP }
+enum class GamePanel { PROFILE, COLLECTION, EQUIPMENT, DOGS, EVENT_LOG, TREASURE_HUNT, FLOCKS, HOME, SETTINGS, ADMIN, SHOP }
 
 private val PanelDark=Color(0xFF151B1D)
 private val PanelGold=Color(0xFFE2AA3D)
@@ -69,6 +69,7 @@ private val PanelTeal=Color(0xFF168D8A)
                 MenuTile("🎒",stringResource(R.string.menu_equipment)) { panel=GamePanel.EQUIPMENT }
                 MenuTile("🐶","Hundar") { panel=GamePanel.DOGS }
                 MenuTile("📜","Logg") { panel=GamePanel.EVENT_LOG }
+                MenuTile("🗺️","Skattjakt") { panel=GamePanel.TREASURE_HUNT }
                 MenuTile("🐕",stringResource(R.string.menu_flocks)) { panel=GamePanel.FLOCKS }
                 MenuTile("🏠",stringResource(R.string.menu_home)) { panel=GamePanel.HOME }
                 MenuTile(R.drawable.menu_settings_pixel,stringResource(R.string.menu_settings)) { panel=GamePanel.SETTINGS }
@@ -94,6 +95,7 @@ private val PanelTeal=Color(0xFF168D8A)
                         GamePanel.EQUIPMENT->EquipmentPanel(api,onProfile)
                         GamePanel.DOGS->DogsPanel(profile,api,onBalance,onProfile)
                         GamePanel.EVENT_LOG->EventLogPanel(api)
+                        GamePanel.TREASURE_HUNT->TreasureHuntPanel(api,onBalance)
                         GamePanel.FLOCKS->FlocksPanel(api,onBalance)
                         GamePanel.HOME->HomePanel(profile,api,onBalance,onProfile)
                         GamePanel.SETTINGS->SettingsPanel(profile,api,poiSettings,onPoiSettings,onProfile)
@@ -143,6 +145,7 @@ private val PanelTeal=Color(0xFF168D8A)
                     GamePanel.EQUIPMENT -> EquipmentPanel(api,onProfile)
                     GamePanel.DOGS -> DogsPanel(profile,api,onBalance,onProfile)
                     GamePanel.EVENT_LOG -> EventLogPanel(api)
+                    GamePanel.TREASURE_HUNT -> TreasureHuntPanel(api,onBalance)
                     GamePanel.FLOCKS -> FlocksPanel(api,onBalance)
                     GamePanel.HOME -> HomePanel(profile,api,onBalance,onProfile)
                     GamePanel.SETTINGS -> SettingsPanel(profile,api,poiSettings,onPoiSettings,onProfile)
@@ -156,9 +159,65 @@ private val PanelTeal=Color(0xFF168D8A)
 
 private fun panelTitleResource(p:GamePanel)=when(p){
     GamePanel.PROFILE->R.string.panel_profile;GamePanel.COLLECTION->R.string.panel_collection;GamePanel.EQUIPMENT->R.string.panel_equipment
-    GamePanel.DOGS->R.string.panel_dogs;GamePanel.EVENT_LOG->R.string.panel_event_log
+    GamePanel.DOGS->R.string.panel_dogs;GamePanel.EVENT_LOG->R.string.panel_event_log;GamePanel.TREASURE_HUNT->R.string.panel_treasure_hunt
     GamePanel.FLOCKS->R.string.panel_flocks;GamePanel.HOME->R.string.panel_home;GamePanel.SETTINGS->R.string.panel_settings
     GamePanel.ADMIN->R.string.panel_admin;GamePanel.SHOP->R.string.panel_shop
+}
+
+@Composable private fun TreasureHuntPanel(api:GameApiRepository,onBalance:(Long)->Unit){
+    val scope=rememberCoroutineScope()
+    var state by remember{mutableStateOf<TreasureHuntState?>(null)}
+    var team by remember{mutableStateOf<HuntTeamState?>(null)}
+    var message by remember{mutableStateOf<String?>(null)}
+    var busy by remember{mutableStateOf(false)}
+    suspend fun refresh(){runCatching{api.treasureHunt()}.onSuccess{state=it}.onFailure{message=it.message};runCatching{api.huntTeam()}.onSuccess{team=it}.onFailure{message=it.message}}
+    fun reload(){scope.launch{refresh()}}
+    LaunchedEffect(Unit){while(true){refresh();delay(5000)}}
+    LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){
+        item{
+            Text("Välj en promenadlängd. Jakten skapar kontrollpunkter som får tas i valfri ordning.",color=PanelCream)
+            Text("Belöning: XP och en exklusiv markörram. Jakten ger inga ben.",color=PanelGold,fontSize=13.sp)
+        }
+        team?.invites?.forEach{invite->item{
+            Column(Modifier.fillMaxWidth().background(Color(0xFF293438),RoundedCornerShape(8.dp)).padding(10.dp)){
+                Text("${invite.leaderName} bjuder in dig till sitt jaktlag",color=PanelCream,fontWeight=FontWeight.Bold)
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onClick={scope.launch{runCatching{api.respondHuntTeamInvite(invite.id,true)}.onSuccess{refresh()}.onFailure{message=it.message}}}){Text("GÅ MED")};OutlinedButton(onClick={scope.launch{runCatching{api.respondHuntTeamInvite(invite.id,false)}.onSuccess{refresh()}}}){Text("NEKA")}}
+            }
+        }}
+        item{
+            Text("JAKTLAG",color=PanelGold,fontWeight=FontWeight.Black,fontSize=18.sp)
+            val t=team
+            if(t?.teamId==null) Button(enabled=!busy,onClick={scope.launch{busy=true;runCatching{api.createHuntTeam()}.onSuccess{message="Jaktlaget skapades";refresh()}.onFailure{message=it.message};busy=false}},modifier=Modifier.fillMaxWidth()){Text("SKAPA JAKTLAG")}
+            else Column(verticalArrangement=Arrangement.spacedBy(5.dp)){
+                t.members.forEach{m->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(5.dp)).padding(8.dp),verticalAlignment=Alignment.CenterVertically){Text("${m.displayName} · Level ${m.level}${if(m.isLeader)"  👑" else ""}",Modifier.weight(1f),color=PanelCream);if(t.isLeader&&!m.isLeader)TextButton(onClick={scope.launch{runCatching{api.kickHuntTeamMember(m.playerId)}.onSuccess{refresh()}.onFailure{message=it.message}}}){Text("SPARKA",color=Color(0xFFFF6B62))}}}
+                if(t.isLeader&&t.nearby.isNotEmpty()){Text("Spelare inom 200 meter",color=PanelGold,fontSize=13.sp);t.nearby.forEach{p->Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("${p.displayName} · ${p.distanceM} m",Modifier.weight(1f),color=PanelCream);TextButton(onClick={scope.launch{runCatching{api.inviteToHuntTeam(p.playerId)}.onSuccess{message="Inbjudan skickad"}.onFailure{message=it.message}}}){Text("BJUD IN")}}}}
+                OutlinedButton(onClick={scope.launch{runCatching{api.leaveHuntTeam()}.onSuccess{message="Du lämnade jaktlaget";refresh()}.onFailure{message=it.message}}},modifier=Modifier.fillMaxWidth()){Text(if(t.isLeader)"UPPLÖS JAKTLAG" else "LÄMNA JAKTLAG")}
+            }
+        }
+        val active=state?.takeIf{it.active}
+        if(active==null){
+            items((1..10).toList()){km->
+                val cost=25+25*km
+                Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(8.dp)).padding(10.dp),verticalAlignment=Alignment.CenterVertically){
+                    Column(Modifier.weight(1f)){Text("$km km",color=PanelCream,fontWeight=FontWeight.Black);Text("$cost ben · ${25*km} XP",color=PanelGold,fontSize=12.sp)}
+                    Button(enabled=!busy,onClick={busy=true;scope.launch{runCatching{api.startTreasureHunt(km);api.boneBalance()}.onSuccess{onBalance(it);message="Skattjakten har startat!";reload()}.onFailure{message=it.message}.also{busy=false}}}){Text("STARTA")}
+                }
+            }
+        }else{
+            item{
+                Text("Aktiv jakt · ${active.lengthKm} km",color=PanelGold,fontSize=20.sp,fontWeight=FontWeight.Black)
+                Text("Ledtrådar ${active.checkpoints.count{it.claimed}}/${active.checkpoints.size} · ${active.xpReward} XP",color=PanelCream)
+            }
+            items(active.checkpoints){checkpoint->
+                Text("● Ledtråd ${checkpoint.sequence}  ${if(checkpoint.claimed)"✓ tagen" else "kvar"}",color=if(checkpoint.claimed)Color(0xFF59C879) else PanelCream,modifier=Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(6.dp)).padding(10.dp))
+            }
+            item{
+                if(active.checkpoints.none{it.claimed}) Button(enabled=!busy,onClick={scope.launch{busy=true;runCatching{api.rerollTreasureHunt()}.onSuccess{message="Jakten rullades om gratis";refresh()}.onFailure{message=it.message};busy=false}},modifier=Modifier.fillMaxWidth()){Text("ROLLA OM GRATIS")}
+                OutlinedButton(onClick={scope.launch{runCatching{api.abortTreasureHunt()}.onSuccess{message="Jakten avbröts";reload()}.onFailure{message=it.message}}},modifier=Modifier.fillMaxWidth()){Text("AVBRYT JAKT")}
+            }
+        }
+        message?.let{item{Text(it,color=PanelGold)}}
+    }
 }
 
 @Composable private fun ProfilePanel(profile:SessionBootstrap,api:GameApiRepository,onProfile:(SessionBootstrap)->Unit,onCollection:()->Unit) {

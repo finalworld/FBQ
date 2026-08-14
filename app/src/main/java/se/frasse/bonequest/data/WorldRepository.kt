@@ -28,6 +28,15 @@ private data class DirtPileRow(
 )
 
 @Serializable
+data class WorldPoop(
+    val id:String,@SerialName("owner_player_id") val ownerPlayerId:String,
+    @SerialName("dog_id") val dogId:String,val latitude:Double,val longitude:Double,
+    @SerialName("created_at") val createdAt:String,@SerialName("expires_at") val expiresAt:String
+)
+
+@Serializable data class PoopCollectResult(@SerialName("poop_id") val poopId:String,val xp:Int)
+
+@Serializable
 data class NearbyPlayer(
     @SerialName("player_id") val playerId:String,
     val latitude:Double,val longitude:Double,val heading:Float,
@@ -64,7 +73,7 @@ data class PileResult(
     @SerialName("is_double") val isDouble:Boolean
 ):java.io.Serializable
 
-data class WorldSnapshot(val bones:List<Bone>,val piles:List<DirtPile>)
+data class WorldSnapshot(val bones:List<Bone>,val piles:List<DirtPile>,val poops:List<WorldPoop>)
 data class MapBounds(val minLat:Double,val minLon:Double,val maxLat:Double,val maxLon:Double)
 
 class WorldRepository(private val client:SupabaseClient) {
@@ -72,6 +81,7 @@ class WorldRepository(private val client:SupabaseClient) {
     val worldChanges:Flow<Unit> = merge(
         channel.postgresChangeFlow<PostgresAction>(schema="public") { table="world_bones" },
         channel.postgresChangeFlow<PostgresAction>(schema="public") { table="dirt_piles" },
+        channel.postgresChangeFlow<PostgresAction>(schema="public") { table="world_dog_poops" },
         channel.postgresChangeFlow<PostgresAction>(schema="public") { table="game_pois" }
     ).map { Unit }
 
@@ -98,7 +108,13 @@ class WorldRepository(private val client:SupabaseClient) {
             it.hasValidMapData() &&
                 distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters
         }.map { DirtPile(it.id,it.latitude,it.longitude,it.cost,it.pileType,it.updatedAt) }
-        return WorldSnapshot(bones,piles)
+        val poops=client.from("world_dog_poops").select {
+            filter {
+                eq("active",true); gte("latitude",center.latitude-latDelta); lte("latitude",center.latitude+latDelta)
+                gte("longitude",center.longitude-lonDelta); lte("longitude",center.longitude+lonDelta)
+            }
+        }.decodeList<WorldPoop>().filter { distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters }
+        return WorldSnapshot(bones,piles,poops)
     }
 
     suspend fun updatePresence(point:GeoPoint,accuracy:Float,heading:Float=0f,speed:Float?=null) {
@@ -133,6 +149,10 @@ class WorldRepository(private val client:SupabaseClient) {
 
     suspend fun openPile(id:String):PileResult = client.postgrest.rpc(
         "open_dirt_pile",buildJsonObject { put("p_pile_id",id) }
+    ).decodeSingle()
+
+    suspend fun collectPoop(id:String):PoopCollectResult = client.postgrest.rpc(
+        "collect_dog_poop",buildJsonObject { put("p_poop_id",id) }
     ).decodeSingle()
 }
 

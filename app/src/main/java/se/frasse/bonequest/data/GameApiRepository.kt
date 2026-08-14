@@ -72,6 +72,38 @@ import java.util.UUID
     @SerialName("collection_id") val collectionId:String,@SerialName("bone_type") val boneType:Int,
     @SerialName("bone_value") val boneValue:Int,@SerialName("created_at") val createdAt:String
 )
+@Serializable data class TreasureCheckpoint(
+    val id:String,val sequence:Int,val latitude:Double,val longitude:Double,val claimed:Boolean=false
+)
+@Serializable data class TreasureHuntState(
+    val active:Boolean=false,val id:String?=null,
+    @SerialName("length_km") val lengthKm:Int=0,val cost:Int=0,
+    @SerialName("xp_reward") val xpReward:Int=0,
+    @SerialName("owner_player_id") val ownerPlayerId:String?=null,
+    val checkpoints:List<TreasureCheckpoint> = emptyList()
+)
+@Serializable data class HuntTeamMember(
+    @SerialName("player_id") val playerId:String,
+    @SerialName("display_name") val displayName:String,
+    val level:Int=1,@SerialName("is_leader") val isLeader:Boolean=false
+)
+@Serializable data class HuntTeamInvite(
+    val id:String,@SerialName("team_id") val teamId:String,
+    @SerialName("leader_name") val leaderName:String
+)
+@Serializable data class NearbyHuntPlayer(
+    @SerialName("player_id") val playerId:String,
+    @SerialName("display_name") val displayName:String,
+    @SerialName("distance_m") val distanceM:Int=0
+)
+@Serializable data class HuntTeamState(
+    @SerialName("team_id") val teamId:String?=null,
+    @SerialName("leader_id") val leaderId:String?=null,
+    @SerialName("is_leader") val isLeader:Boolean=false,
+    val members:List<HuntTeamMember> = emptyList(),
+    val invites:List<HuntTeamInvite> = emptyList(),
+    val nearby:List<NearbyHuntPlayer> = emptyList()
+)
 @Serializable data class PendingPuppy(
     val id:String,val breed:Int,val gender:String,
     @SerialName("development_km") val developmentKm:Int,
@@ -125,6 +157,19 @@ class GameApiRepository(private val client:SupabaseClient) {
     suspend fun eventLog(category:String?=null):List<PlayerEvent> = client.postgrest.rpc("get_my_event_log",buildJsonObject {
         if(category==null)put("p_category",kotlinx.serialization.json.JsonNull) else put("p_category",category);put("p_limit",100)
     }).decodeList()
+    suspend fun treasureHunt():TreasureHuntState = client.postgrest.rpc("get_treasure_hunt_state").decodeSingle()
+    suspend fun startTreasureHunt(lengthKm:Int) = client.postgrest.rpc("start_treasure_hunt",buildJsonObject {
+        put("p_length_km",lengthKm);put("p_points",buildJsonArray{})
+    })
+    suspend fun claimTreasureCheckpoint(id:String) = client.postgrest.rpc("claim_treasure_checkpoint",buildJsonObject { put("p_checkpoint_id",id) })
+    suspend fun abortTreasureHunt() = client.postgrest.rpc("abort_treasure_hunt")
+    suspend fun rerollTreasureHunt() = client.postgrest.rpc("reroll_treasure_hunt")
+    suspend fun huntTeam():HuntTeamState = client.postgrest.rpc("get_hunt_team_state").decodeSingle()
+    suspend fun createHuntTeam() = client.postgrest.rpc("create_hunt_team")
+    suspend fun inviteToHuntTeam(playerId:String) = client.postgrest.rpc("invite_to_hunt_team",buildJsonObject{put("p_player_id",playerId)})
+    suspend fun respondHuntTeamInvite(inviteId:String,accept:Boolean) = client.postgrest.rpc("respond_hunt_team_invite",buildJsonObject{put("p_invite_id",inviteId);put("p_accept",accept)})
+    suspend fun leaveHuntTeam() = client.postgrest.rpc("leave_hunt_team")
+    suspend fun kickHuntTeamMember(playerId:String) = client.postgrest.rpc("kick_hunt_team_member",buildJsonObject{put("p_player_id",playerId)})
     suspend fun setAdminMode(enabled:Boolean) = client.postgrest.rpc("set_admin_mode",buildJsonObject { put("p_enabled",enabled) })
     suspend fun boneBalance():Long = client.postgrest.rpc("get_my_bone_balance").data.trim().toLong()
     suspend fun collection():List<BoneCollectionRow> = client.postgrest.rpc("get_bone_collection").decodeList()

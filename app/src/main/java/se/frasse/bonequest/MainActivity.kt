@@ -124,6 +124,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var player by remember { mutableStateOf<GeoPoint?>(null) }
     var bones by remember { mutableStateOf(if (worldRepository==null) repository.loadBones() else emptyList()) }
     var piles by remember { mutableStateOf(if (worldRepository==null) repository.loadPiles() else emptyList()) }
+    var poops by remember { mutableStateOf(emptyList<WorldPoop>()) }
+    var treasureHunt by remember { mutableStateOf<TreasureHuntState?>(null) }
     var mapPois by remember { mutableStateOf(emptyList<MapPoi>()) }
     var nearbyPlayers by remember { mutableStateOf(emptyList<NearbyPlayer>()) }
     var poiSettings by remember { mutableStateOf(PoiSettings()) }
@@ -141,6 +143,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var insideForegroundBoneZone by remember { mutableStateOf(false) }
     var homeInfoOpen by remember { mutableStateOf(false) }
     var pendingPileReward by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<PileResult?>(null) }
+    var poopRewardXp by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Int?>(null) }
     var pileRewardSpinning by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var pendingPuppy by remember { mutableStateOf<PendingPuppy?>(null) }
     var activeDog by remember { mutableStateOf<DogProfile?>(null) }
@@ -215,6 +218,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
         if (!permissionGranted) permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         gameApi?.let{runCatching{it.poiSettings()}.onSuccess{settings->poiSettings=settings}}
         gameApi?.let{runCatching{it.pendingPuppy()}.onSuccess{pendingPuppy=it}}
+        gameApi?.let{runCatching{it.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}}}
     }
 
     LaunchedEffect(permissionGranted,currentProfile.walkingModeEnabled,permissionRefresh) {
@@ -248,7 +252,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 delay(250)
                 val center = player ?: return@collect
                 runCatching { server.loadNearby(center) }.onSuccess {
-                    bones=it.bones; piles=it.piles
+                    bones=it.bones; piles=it.piles; poops=it.poops
                 }
                 visibleMapBounds?.let { bounds ->
                     runCatching { server.mapPois(bounds) }.onSuccess { mapPois=it }
@@ -267,7 +271,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 delay(5_000)
                 val center = player ?: continue
                 runCatching { server.loadNearby(center) }.onSuccess {
-                    bones=it.bones; piles=it.piles
+                    bones=it.bones; piles=it.piles; poops=it.poops
                 }
                 runCatching { server.nearbyPlayers() }.onSuccess { nearbyPlayers=it }
                 gameApi?.let { api -> runCatching { api.bootstrap() }.onSuccess { fresh ->
@@ -276,7 +280,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     if(!collecting&&sharedGain>0&&sharedBones>0) status="Ni tog benet tillsammans · +$sharedGain ben"
                     boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                     currentProfile=fresh
-                } }
+                };runCatching{api.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}} }
                 gameApi?.let { api -> runCatching { api.latestSharedBoneReward() }.onSuccess { shared ->
                     if(sharedRewardInitialized&&shared!=null&&shared.collectionId!=latestSharedRewardId){
                         status="Ni tog ${localizedBoneName(context,shared.boneType)} tillsammans · +${shared.boneValue} ben"
@@ -357,6 +361,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                 walkableDiscoveryDone=true
                                 bones=snapshot.bones
                                 piles=snapshot.piles
+                                poops=snapshot.poops
                                 lastWorldCenter=point
                                 lastWorldLoadAt=System.currentTimeMillis()
                             }.onFailure{
@@ -370,7 +375,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                             loadingBones=true
                             runCatching { worldRepository.loadNearby(point) }
                                 .onSuccess { snapshot ->
-                                    bones=snapshot.bones; piles=snapshot.piles
+                                    bones=snapshot.bones; piles=snapshot.piles; poops=snapshot.poops
                                     lastWorldCenter=point; lastWorldLoadAt=System.currentTimeMillis()
                                 }
                                 .onFailure { status=context.getString(R.string.status_world_load_failed) }
@@ -442,6 +447,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
             if(currentProfile.barkEnabled) runCatching { DogBarkPlayer.play() }
         }
     }
+    val nearPoop=remember(player,poops){val p=player?:return@remember null;poops.minByOrNull{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)}?.takeIf{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)<=30.0}}
+    val nearTreasure=remember(player,treasureHunt){val p=player?:return@remember null;treasureHunt?.checkpoints?.filterNot{it.claimed}?.minByOrNull{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)}?.takeIf{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)<=30.0}}
     val activityPermissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted->
         if(granted)permissionRefresh++
     }
@@ -505,6 +512,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
         nearBone?.let{bone->add(CompactAction(R.drawable.bone_01,stringResource(R.string.action_take_bone),"+${boneValue(bone.type)}",enabled=!collecting&&isOnline,onClick={collectVisibleBone()}))}
         nearPile?.let{pile->add(CompactAction(dirtDrawable(pile.type),stringResource(R.string.action_dig_pile),"${pile.cost} BEN",enabled=boneCount>=pile.cost&&!collecting&&isOnline,onClick={pileToConfirm=pile}))}
         nearShop?.let{add(CompactAction(R.drawable.poi_pet_shop,stringResource(R.string.action_visit_shop),"BUTIK",enabled=isOnline,onClick={activePanel=GamePanel.SHOP}))}
+        nearPoop?.let{poop->add(CompactAction(R.drawable.poop_marker,"PLOCKA UPP","HÅLL VÄRLDEN REN",enabled=isOnline&&!collecting,onClick={scope.launch{collecting=true;runCatching{worldRepository?.collectPoop(poop.id)}.onSuccess{r->if(r!=null){poops=poops.filterNot{it.id==poop.id};poopRewardXp=r.xp}}.onFailure{status="Kunde inte plocka upp bajset."};collecting=false}}))}
+        nearTreasure?.let{checkpoint->add(CompactAction(R.drawable.marker_default_paw,"TA LEDTRÅD","${checkpoint.sequence}/${treasureHunt?.checkpoints?.size?:0}",enabled=isOnline&&!collecting,onClick={scope.launch{collecting=true;runCatching{gameApi?.claimTreasureCheckpoint(checkpoint.id);gameApi?.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt?.takeIf{it.active};status="Ledtråden är tagen!"}.onFailure{status="Kunde inte ta ledtråden."};collecting=false}}))}
         if(atHome)add(CompactAction(R.drawable.marker_default_paw,"HEM","AUTOMAT",onClick={activePanel=GamePanel.HOME}))
     }
 
@@ -514,6 +523,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 player = player,
                 bones = bones,
                 piles = piles,
+                poops = poops,
+                treasureCheckpoints=treasureHunt?.checkpoints.orEmpty(),
                 pois = mapPois.filter{poi->poi.hasGameShop||when(poi.poiType){"dog_park"->poiSettings.showDogParks;"pet_shop"->poiSettings.showPetShops;"veterinary"->poiSettings.showVets;else->poiSettings.showGrooming}},
                 nearbyPlayers = nearbyPlayers,
                 glints=collectionGlints,
@@ -552,6 +563,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     status=context.getString(R.string.pile_map_info,pile.cost,d.toInt())+pile.updatedAt?.let{" · Byter om ${timeUntilRefresh(it)}"}.orEmpty()
                 },
                 onPoiTapped={poi->if(adminMapMode)adminDeleteTarget="poi" to poi.poiId else selectedPoi=poi},
+                onPoopTapped={poop->
+                    val ageMinutes=runCatching{java.time.Duration.between(java.time.Instant.parse(poop.createdAt),java.time.Instant.now()).toMinutes()}.getOrDefault(10)
+                    val xp=when{ageMinutes<60->1;ageMinutes<180->3;ageMinutes<360->7;ageMinutes<720->15;ageMinutes<1080->30;else->50}
+                    status="Hundbajs · $xp XP · förmultnar inom ett dygn"
+                },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -669,6 +685,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 Surface(Modifier.align(Alignment.Center).padding(24.dp),color=androidx.compose.ui.graphics.Color(0xF21A2022),shape=RoundedCornerShape(8.dp)){
                     Column(Modifier.padding(14.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(if(pileRewardSpinning) stringResource(R.string.ui_text_032) else "Du vann ${reward.rewardValue} ben!",color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=22.sp,fontWeight=FontWeight.Black);DogBoneSlotMachine(pileReelBone,"Vinst minst ${reward.cost} ben",pileRewardSpinning,Modifier.widthIn(max=280.dp),oddsLines=pileOddsLines(reward.cost));if(pileRewardSpinning)LinearProgressIndicator(Modifier.fillMaxWidth().padding(top=8.dp)) else Button(onClick={status=context.getString(R.string.pile_reward_status,reward.rewardValue,if(reward.isDouble)context.getString(R.string.double_win_suffix) else "");pendingPileReward=null},modifier=Modifier.fillMaxWidth().padding(top=8.dp)){Text("OK")}}
                 }
+            }
+            poopRewardXp?.let{xp->
+                AlertDialog(onDismissRequest={},title={Text("TACK FÖR ATT DU HÅLLER RENT!",fontWeight=FontWeight.Black)},text={Text("Du plockade upp hundbajset och fick $xp XP.")},confirmButton={Button(onClick={poopRewardXp=null}){Text("OK")}})
             }
             pileToConfirm?.let{pile->
                 AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text(stringResource(R.string.ui_text_027))},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp),horizontalAlignment=Alignment.CenterHorizontally){DogBoneSlotMachine(pile.type,"JORDHÖG · ${pile.cost} BEN",false,Modifier.widthIn(max=260.dp),oddsLines=pileOddsLines(pile.cost));Text(stringResource(R.string.pile_confirm_body,pile.cost))}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{if(worldRepository!=null)runCatching{worldRepository.openPile(pile.id)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status=context.getString(R.string.pile_spinning)},onFailure={status=when{it.message?.contains("PILE_ALREADY_CLAIMED")==true->context.getString(R.string.pile_claimed_first);it.message?.contains("INSUFFICIENT_BONES")==true->context.getString(R.string.action_need_bones,pile.cost);it.message?.contains("PILE_OUT_OF_RANGE")==true->"Du är för långt från högen.";it.message?.contains("ACCURATE_LOCATION_REQUIRED")==true->context.getString(R.string.bone_gps_inaccurate);else->"${context.getString(R.string.pile_open_failed)} ${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"}});collecting=false;selectedPile=null;pileToConfirm=null}}){Text(stringResource(R.string.pile_pay_button,pile.cost))}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text(stringResource(R.string.ui_text_006))}})
@@ -1101,9 +1120,9 @@ private fun dirtDrawable(type:Int)=intArrayOf(
 
 @Composable
 private fun GameMap(
-    player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, pois: List<MapPoi>, nearbyPlayers:List<NearbyPlayer>,glints:List<GeoPoint>, playerMarkerId:String,home:GeoPoint?, followPlayer: Boolean,
+    player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, poops:List<WorldPoop>, treasureCheckpoints:List<TreasureCheckpoint>, pois: List<MapPoi>, nearbyPlayers:List<NearbyPlayer>,glints:List<GeoPoint>, playerMarkerId:String,home:GeoPoint?, followPlayer: Boolean,
     onManualMove: () -> Unit, onBoundsChanged: (MapBounds) -> Unit, onBoneTapped: (Bone) -> Unit,
-    onPlayerTapped: () -> Unit,onHomeTapped:()->Unit,onEmptyMapTapped:(GeoPoint)->Unit, onPileTapped: (DirtPile) -> Unit,onPoiTapped:(MapPoi)->Unit, modifier: Modifier
+    onPlayerTapped: () -> Unit,onHomeTapped:()->Unit,onEmptyMapTapped:(GeoPoint)->Unit, onPileTapped: (DirtPile) -> Unit,onPoopTapped:(WorldPoop)->Unit,onPoiTapped:(MapPoi)->Unit, modifier: Modifier
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1116,6 +1135,8 @@ private fun GameMap(
     val latestEmptyMapTap by rememberUpdatedState(onEmptyMapTapped)
     val latestPileTap by rememberUpdatedState(onPileTapped)
     val latestPiles by rememberUpdatedState(piles)
+    val latestPoops by rememberUpdatedState(poops)
+    val latestPoopTap by rememberUpdatedState(onPoopTapped)
     val latestPois by rememberUpdatedState(pois)
     val latestPoiTap by rememberUpdatedState(onPoiTapped)
     val latestBoundsChanged by rememberUpdatedState(onBoundsChanged)
@@ -1152,7 +1173,7 @@ private fun GameMap(
                     )
                     val features = libreMap.queryRenderedFeatures(
                         hitArea,
-                        *(BONE_LAYER_IDS + PILE_LAYER_IDS + POI_LAYER_IDS + arrayOf(POI_SHOP_LAYER_ID,HOME_LAYER_ID,PLAYER_LAYER_ID))
+                        *(BONE_LAYER_IDS + PILE_LAYER_IDS + POI_LAYER_IDS + arrayOf(POOP_LAYER_ID,POI_SHOP_LAYER_ID,HOME_LAYER_ID,PLAYER_LAYER_ID))
                     )
                     val boneIds = features.mapNotNull {
                         it.properties()?.get(BONE_ID_PROPERTY)?.asString
@@ -1177,12 +1198,16 @@ private fun GameMap(
                             }
                         if (tappedPile != null) { latestPileTap(tappedPile); true }
                         else {
+                            val poopIds=features.mapNotNull{it.properties()?.get("poopId")?.asString}.toSet()
+                            val tappedPoop=latestPoops.firstOrNull{it.id in poopIds}
+                            if(tappedPoop!=null){latestPoopTap(tappedPoop);true}else{
                             val poiIds=features.mapNotNull{it.properties()?.get("poiId")?.asString}.toSet()
                             val tappedPoi=latestPois.firstOrNull{it.poiId in poiIds}
                             if(tappedPoi!=null){latestPoiTap(tappedPoi);true}
                             else if(libreMap.queryRenderedFeatures(hitArea,POI_CLUSTER_LAYER_ID).isNotEmpty()){libreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng,(libreMap.cameraPosition.zoom+2.0).coerceAtMost(15.0)),450);true}
                             else if(libreMap.queryRenderedFeatures(hitArea,HOME_LAYER_ID).isNotEmpty()){latestHomeTap();true}
                             else if (features.isNotEmpty()) { latestPlayerTap(); true } else {latestEmptyMapTap(GeoPoint(latLng.latitude,latLng.longitude));true}
+                            }
                         }
                     }
                 }
@@ -1244,6 +1269,8 @@ private fun GameMap(
         source.setGeoJson(pileFeatureCollection(piles))
     }
     LaunchedEffect(map,styleReady,glints){map?.style?.getSourceAs<GeoJsonSource>(GLINT_SOURCE_ID)?.setGeoJson(FeatureCollection.fromFeatures(glints.map{Feature.fromGeometry(Point.fromLngLat(it.longitude,it.latitude))}))}
+    LaunchedEffect(map,styleReady,poops){map?.style?.getSourceAs<GeoJsonSource>(POOP_SOURCE_ID)?.setGeoJson(poopFeatureCollection(poops))}
+    LaunchedEffect(map,styleReady,treasureCheckpoints){map?.style?.getSourceAs<GeoJsonSource>(TREASURE_SOURCE_ID)?.setGeoJson(treasureFeatureCollection(treasureCheckpoints))}
 
     LaunchedEffect(map,styleReady,nearbyPlayers) {
         val style=map?.style?:return@LaunchedEffect
@@ -1274,6 +1301,11 @@ private const val HOME_IMAGE_ID="frasse-home-image"
 private const val GLINT_SOURCE_ID="frasse-collection-glints"
 private const val GLINT_LAYER_ID="frasse-collection-glint-layer"
 private const val GLINT_IMAGE_ID="frasse-collection-glint-image"
+private const val POOP_SOURCE_ID="frasse-poops-source"
+private const val POOP_LAYER_ID="frasse-poops-layer"
+private const val POOP_IMAGE_ID="frasse-poop-image"
+private const val TREASURE_SOURCE_ID="frasse-treasure-source"
+private const val TREASURE_LAYER_ID="frasse-treasure-layer"
 private const val BONE_SOURCE_ID = "frasse-bones-source"
 private const val PILE_SOURCE_ID = "frasse-piles-source"
 private const val PILE_ID_PROPERTY = "pileId"
@@ -1297,6 +1329,7 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
     style.addImage(PLAYER_IMAGE_ID, defaultMarkerBitmap(context))
     style.addImage(HOME_IMAGE_ID,homeBitmap())
     style.addImage(GLINT_IMAGE_ID,glintBitmap())
+    style.addImage(POOP_IMAGE_ID,normalizedDrawableBitmap(context,R.drawable.poop_marker,96,96,74,74,true))
     style.addImage(POI_SHOP_IMAGE_ID,shopBadgeBitmap())
     intArrayOf(Color.rgb(22,141,138),Color.rgb(226,170,61),Color.rgb(80,145,220)).forEachIndexed{i,color->style.addImage(FLOCK_DOT_IMAGE_IDS[i],dotBitmap(color))}
 
@@ -1372,6 +1405,10 @@ private fun installGameLayers(style: Style, context: android.content.Context) {
     if(style.getLayer(HOME_LAYER_ID)==null)style.addLayerBelow(SymbolLayer(HOME_LAYER_ID,HOME_SOURCE_ID).withProperties(PropertyFactory.iconImage(HOME_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(.65f)),PLAYER_LAYER_ID)
     if(style.getSource(GLINT_SOURCE_ID)==null)style.addSource(GeoJsonSource(GLINT_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
     if(style.getLayer(GLINT_LAYER_ID)==null)style.addLayer(SymbolLayer(GLINT_LAYER_ID,GLINT_SOURCE_ID).withProperties(PropertyFactory.iconImage(GLINT_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(.8f)))
+    if(style.getSource(POOP_SOURCE_ID)==null)style.addSource(GeoJsonSource(POOP_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
+    if(style.getLayer(POOP_LAYER_ID)==null)style.addLayerBelow(SymbolLayer(POOP_LAYER_ID,POOP_SOURCE_ID).withProperties(PropertyFactory.iconImage(POOP_IMAGE_ID),PropertyFactory.iconAllowOverlap(true),PropertyFactory.iconIgnorePlacement(true),PropertyFactory.iconSize(.68f)),PLAYER_LAYER_ID)
+    if(style.getSource(TREASURE_SOURCE_ID)==null)style.addSource(GeoJsonSource(TREASURE_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>())))
+    if(style.getLayer(TREASURE_LAYER_ID)==null)style.addLayerBelow(CircleLayer(TREASURE_LAYER_ID,TREASURE_SOURCE_ID).withProperties(PropertyFactory.circleRadius(12f),PropertyFactory.circleColor(Color.rgb(226,170,61)),PropertyFactory.circleStrokeColor(Color.rgb(9,39,55)),PropertyFactory.circleStrokeWidth(4f)),PLAYER_LAYER_ID)
     if (style.getSource(POI_SOURCE_ID) == null) {
         style.addSource(GeoJsonSource(POI_SOURCE_ID,FeatureCollection.fromFeatures(emptyArray<Feature>()),GeoJsonOptions().withCluster(true).withClusterRadius(44).withClusterMaxZoom(13)))
     }
@@ -1421,6 +1458,8 @@ internal fun normalizedDrawableBitmap(context:android.content.Context,drawableId
 }
 
 private fun pileFeatureCollection(piles: List<DirtPile>): FeatureCollection = FeatureCollection.fromFeatures(piles.map { pile -> Feature.fromGeometry(Point.fromLngLat(pile.longitude,pile.latitude)).apply { addStringProperty(PILE_ID_PROPERTY,pile.id); addNumberProperty("pileType",pile.type.coerceIn(0,4)) } })
+private fun poopFeatureCollection(poops:List<WorldPoop>):FeatureCollection=FeatureCollection.fromFeatures(poops.map{poop->Feature.fromGeometry(Point.fromLngLat(poop.longitude,poop.latitude)).apply{addStringProperty("poopId",poop.id)}})
+private fun treasureFeatureCollection(checkpoints:List<TreasureCheckpoint>):FeatureCollection=FeatureCollection.fromFeatures(checkpoints.filterNot{it.claimed}.map{checkpoint->Feature.fromGeometry(Point.fromLngLat(checkpoint.longitude,checkpoint.latitude)).apply{addStringProperty("checkpointId",checkpoint.id);addNumberProperty("sequence",checkpoint.sequence)}})
 
 private fun nearbyPlayerFeatureCollection(players:List<NearbyPlayer>):FeatureCollection=FeatureCollection.fromFeatures(
     players.map { player->Feature.fromGeometry(Point.fromLngLat(player.longitude,player.latitude)).apply {

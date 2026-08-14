@@ -13,7 +13,7 @@
     {
       "id": "background",
       "type": "background",
-      "paint": { "background-color": "#496F35" }
+      "paint": { "background-color": "#527D36" }
     },
     {
       "id": "landcover",
@@ -23,12 +23,12 @@
       "paint": {
         "fill-color": [
           "match", ["get", "class"],
-          "wood", "#284E2D",
-          "grass", "#567D39",
-          "farmland", "#718446",
+          "wood", "#285432",
+          "grass", "#5E913D",
+          "farmland", "#78934A",
           "wetland", "#365E4B",
           "sand", "#BFA36A",
-          "#496F35"
+          "#54823A"
         ],
         "fill-opacity": 0.95
       }
@@ -38,7 +38,7 @@
       "type": "fill",
       "source": "openmaptiles",
       "source-layer": "park",
-      "paint": { "fill-color": "#4E7836", "fill-opacity": 0.96 }
+      "paint": { "fill-color": "#5C913F", "fill-opacity": 0.96 }
     },
     {
       "id": "landuse",
@@ -92,8 +92,8 @@
       "filter": ["match", ["get", "class"], ["motorway", "trunk", "primary", "secondary", "tertiary", "minor", "service"], true, false],
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#6F5130",
-        "line-width": ["interpolate", ["exponential", 1.2], ["zoom"], 8, 1.2, 12, 2.7, 16, 8.5, 20, 22]
+        "line-color": "#76512E",
+        "line-width": ["interpolate", ["exponential", 1.2], ["zoom"], 8, 1.5, 12, 3.2, 16, 9.4, 20, 23]
       }
     },
     {
@@ -106,12 +106,12 @@
       "paint": {
         "line-color": [
           "match", ["get", "class"],
-          "motorway", "#D69A50",
-          "trunk", "#DEA85F",
-          "primary", "#E8C47F",
-          "secondary", "#E7D09D",
-          "tertiary", "#E4D8B7",
-          "#E9DFC6"
+          "motorway", "#DFA257",
+          "trunk", "#E5B468",
+          "primary", "#EAC986",
+          "secondary", "#EBD5A4",
+          "tertiary", "#E8DDBC",
+          "#F0E5CA"
         ],
         "line-width": ["interpolate", ["exponential", 1.2], ["zoom"], 8, 0.7, 12, 1.8, 16, 6.3, 20, 18]
       }
@@ -125,9 +125,9 @@
       "minzoom": 11,
       "layout": { "line-cap": "round", "line-join": "round" },
       "paint": {
-        "line-color": "#F0DFB4",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 11, 0.7, 15, 2.0, 18, 4.5],
-        "line-dasharray": [1.2, 1.0]
+        "line-color": "#F3DFAC",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 11, 0.9, 15, 2.5, 18, 5.2],
+        "line-dasharray": [1.5, 0.75]
       }
     },
     {
