@@ -108,12 +108,16 @@ class WorldRepository(private val client:SupabaseClient) {
             it.hasValidMapData() &&
                 distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters
         }.map { DirtPile(it.id,it.latitude,it.longitude,it.cost,it.pileType,it.updatedAt) }
-        val poops=client.from("world_dog_poops").select {
-            filter {
-                eq("active",true); gte("latitude",center.latitude-latDelta); lte("latitude",center.latitude+latDelta)
-                gte("longitude",center.longitude-lonDelta); lte("longitude",center.longitude+lonDelta)
-            }
-        }.decodeList<WorldPoop>().filter { distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters }
+        // Keep the core world available while optional feature migrations are rolling out.
+        // A missing poop table must never hide bones and dirt piles from older databases.
+        val poops=runCatching {
+            client.from("world_dog_poops").select {
+                filter {
+                    eq("active",true); gte("latitude",center.latitude-latDelta); lte("latitude",center.latitude+latDelta)
+                    gte("longitude",center.longitude-lonDelta); lte("longitude",center.longitude+lonDelta)
+                }
+            }.decodeList<WorldPoop>().filter { distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters }
+        }.getOrDefault(emptyList())
         return WorldSnapshot(bones,piles,poops)
     }
 
