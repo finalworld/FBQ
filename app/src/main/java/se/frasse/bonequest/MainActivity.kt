@@ -564,7 +564,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             )
 
             activeDog?.let { dog ->
-                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=97.dp,end=6.dp).zIndex(4f))
+                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=101.dp,end=6.dp).zIndex(4f))
             }
 
             if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=126.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
@@ -974,8 +974,8 @@ private fun TopHud(count:Int,totalMeters:Long,steps:Long,onMenu:()->Unit,modifie
             Box(Modifier.fillMaxHeight().fillMaxWidth(.18f).clickable(onClick=onMenu))
             Column(
                 Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.365f)
-                    .padding(start=9.dp,end=10.dp,top=3.dp,bottom=3.dp),
-                verticalArrangement=Arrangement.SpaceEvenly
+                    .padding(start=9.dp,end=10.dp),
+                verticalArrangement=Arrangement.Center
             ) {
                 SpikedHudStat(
                     R.drawable.hud_stat_bone,
@@ -992,14 +992,14 @@ private fun TopHud(count:Int,totalMeters:Long,steps:Long,onMenu:()->Unit,modifie
 }
 
 @Composable private fun SpikedHudStat(icon:Int,value:String){
-    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-        Image(painterResource(icon),null,Modifier.size(18.dp),contentScale=ContentScale.Fit)
+    Row(Modifier.fillMaxWidth().height(20.dp),verticalAlignment=Alignment.CenterVertically){
+        Image(painterResource(icon),null,Modifier.size(16.dp),contentScale=ContentScale.Fit)
         Text(
             value,
-            Modifier.weight(1f).padding(start=6.dp),
+            Modifier.weight(1f).padding(start=5.dp),
             color=androidx.compose.ui.graphics.Color(0xFF191711),
             fontWeight=FontWeight.Black,
-            fontSize=if(value.length>11) 9.sp else 11.sp,
+            fontSize=if(value.length>11) 9.sp else 10.sp,
             maxLines=1,
             textAlign=TextAlign.Start,
             softWrap=false
