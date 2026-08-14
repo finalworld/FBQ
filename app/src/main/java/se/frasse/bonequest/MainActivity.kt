@@ -564,7 +564,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             )
 
             activeDog?.let { dog ->
-                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=101.dp,end=6.dp).zIndex(4f))
+                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=102.dp,end=6.dp).zIndex(4f))
             }
 
             if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=126.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
@@ -993,7 +993,7 @@ private fun TopHud(count:Int,totalMeters:Long,steps:Long,onMenu:()->Unit,modifie
 
 @Composable private fun SpikedHudStat(icon:Int,value:String){
     Row(Modifier.fillMaxWidth().height(20.dp),verticalAlignment=Alignment.CenterVertically){
-        Image(painterResource(icon),null,Modifier.size(16.dp),contentScale=ContentScale.Fit)
+        Image(painterResource(icon),null,Modifier.size(18.dp),contentScale=ContentScale.Fit)
         Text(
             value,
             Modifier.weight(1f).padding(start=5.dp),
