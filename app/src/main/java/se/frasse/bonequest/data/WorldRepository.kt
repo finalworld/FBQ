@@ -160,14 +160,25 @@ class WorldRepository(private val client:SupabaseClient) {
         ).decodeList()
     }
 
-    suspend fun collectNearbyBones():List<CollectResult> =
-        client.postgrest.rpc("collect_nearby_bones").decodeList()
+    suspend fun collectNearbyBones(
+        point:GeoPoint,accuracy:Float,heading:Float=0f,speed:Float?=null
+    ):List<CollectResult> {
+        // The map uses the phone's live position while collection is validated
+        // against player_presence in Postgres. Persist this exact fix first so
+        // tapping immediately after walking into range cannot race an older
+        // asynchronous presence update.
+        updatePresence(point,accuracy,heading,speed)
+        return client.postgrest.rpc("collect_nearby_bones").decodeList()
+    }
 
     suspend fun openPile(id:String):PileResult = client.postgrest.rpc(
         "open_dirt_pile",buildJsonObject { put("p_pile_id",id) }
     ).decodeSingle()
 
-    suspend fun collectPoop(id:String):PoopCollectResult {
+    suspend fun collectPoop(
+        id:String,point:GeoPoint,accuracy:Float,heading:Float=0f,speed:Float?=null
+    ):PoopCollectResult {
+        updatePresence(point,accuracy,heading,speed)
         val response=client.postgrest.rpc(
             "collect_dog_poop",buildJsonObject { put("p_poop_id",id) }
         )

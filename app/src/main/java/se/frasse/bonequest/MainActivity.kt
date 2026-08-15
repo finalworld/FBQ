@@ -122,6 +122,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
     }
     var player by remember { mutableStateOf<GeoPoint?>(null) }
+    var latestLocationAccuracy by remember { mutableFloatStateOf(Float.MAX_VALUE) }
+    var latestLocationHeading by remember { mutableFloatStateOf(0f) }
+    var latestLocationSpeed by remember { mutableStateOf<Float?>(null) }
     var bones by remember { mutableStateOf(if (worldRepository==null) repository.loadBones() else emptyList()) }
     var piles by remember { mutableStateOf(if (worldRepository==null) repository.loadPiles() else emptyList()) }
     var poops by remember { mutableStateOf(emptyList<WorldPoop>()) }
@@ -305,6 +308,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
             tracker.start { location ->
                 val point = GeoPoint(location.latitude, location.longitude)
                 player = point
+                latestLocationAccuracy=location.accuracy
+                latestLocationHeading=location.bearing
+                latestLocationSpeed=location.speed.takeIf { location.hasSpeed() }
                 foregroundDistanceFilter.add(se.frasse.bonequest.walking.LocationSample(
                     location.latitude,location.longitude,location.accuracy,
                     location.elapsedRealtimeNanos/1_000_000,location.speed.takeIf{location.hasSpeed()}
@@ -499,7 +505,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
         if(adminMapMode){status="Adminläget delar inte ut ben eller XP.";return}
         val bone=nearBone?:return;val p0=player;collecting=true
         scope.launch {
-            if(worldRepository!=null)runCatching{worldRepository.collectNearbyBones()}.fold(onSuccess={rewards->
+            if(worldRepository!=null&&p0!=null)runCatching{worldRepository.collectNearbyBones(p0,latestLocationAccuracy,latestLocationHeading,latestLocationSpeed)}.fold(onSuccess={rewards->
                 val reward=rewards.sumOf{it.playerReward};val ids=if(p0==null)emptySet() else bones.filter{distanceMeters(p0.latitude,p0.longitude,it.latitude,it.longitude)<=25}.mapTo(mutableSetOf()){it.id}
                 collectionGlints=bones.filter{it.id in ids}.map{GeoPoint(it.latitude,it.longitude)};bones=bones.filterNot{it.id in ids}
                 gameApi?.let{api->runCatching{api.bootstrap()}.onSuccess{fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()}}
@@ -512,7 +518,21 @@ internal fun GameScreen(profile:SessionBootstrap) {
         nearBone?.let{bone->add(CompactAction(R.drawable.bone_01,stringResource(R.string.action_take_bone),"+${boneValue(bone.type)}",enabled=!collecting&&isOnline,onClick={collectVisibleBone()}))}
         nearPile?.let{pile->add(CompactAction(dirtDrawable(pile.type),stringResource(R.string.action_dig_pile),"${pile.cost} BEN",enabled=boneCount>=pile.cost&&!collecting&&isOnline,onClick={pileToConfirm=pile}))}
         nearShop?.let{add(CompactAction(R.drawable.poi_pet_shop,stringResource(R.string.action_visit_shop),"BUTIK",enabled=isOnline,onClick={activePanel=GamePanel.SHOP}))}
-        nearPoop?.let{poop->add(CompactAction(R.drawable.poop_marker,"PLOCKA UPP","HÅLL VÄRLDEN REN",enabled=isOnline&&!collecting,onClick={scope.launch{collecting=true;runCatching{worldRepository?.collectPoop(poop.id)}.onSuccess{r->if(r!=null){poops=poops.filterNot{it.id==poop.id};poopRewardXp=r.xp}}.onFailure{status="Kunde inte plocka upp bajset."};collecting=false}}))}
+        nearPoop?.let{poop->add(CompactAction(R.drawable.poop_marker,"PLOCKA UPP","HÅLL VÄRLDEN REN",enabled=isOnline&&!collecting,onClick={scope.launch{
+            collecting=true
+            val currentPoint=player
+            runCatching{
+                check(currentPoint!=null){"GPS_REQUIRED"}
+                worldRepository?.collectPoop(poop.id,currentPoint,latestLocationAccuracy,latestLocationHeading,latestLocationSpeed)
+            }.onSuccess{r->if(r!=null){poops=poops.filterNot{it.id==poop.id};poopRewardXp=r.xp}}
+                .onFailure{e->status=when{
+                    e.message?.contains("POOP_GONE")==true->"Bajset har redan plockats upp eller förmultnat."
+                    e.message?.contains("TOO_FAR")==true->"Du är inte tillräckligt nära bajset ännu."
+                    e.message?.contains("GPS_REQUIRED")==true->"GPS-signalen är inte tillräckligt exakt ännu."
+                    else->"Kunde inte plocka upp bajset. Försök igen."
+                }}
+            collecting=false
+        }}))}
         nearTreasure?.let{checkpoint->add(CompactAction(R.drawable.marker_default_paw,"TA LEDTRÅD","${checkpoint.sequence}/${treasureHunt?.checkpoints?.size?:0}",enabled=isOnline&&!collecting,onClick={scope.launch{collecting=true;runCatching{gameApi?.claimTreasureCheckpoint(checkpoint.id);gameApi?.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt?.takeIf{it.active};status="Ledtråden är tagen!"}.onFailure{status="Kunde inte ta ledtråden."};collecting=false}}))}
         if(atHome)add(CompactAction(R.drawable.marker_default_paw,"HEM","AUTOMAT",onClick={activePanel=GamePanel.HOME}))
     }
@@ -568,6 +588,15 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     val xp=when{ageMinutes<60->1;ageMinutes<180->3;ageMinutes<360->7;ageMinutes<720->15;ageMinutes<1080->30;else->50}
                     status="Hundbajs · $xp XP · förmultnar inom ett dygn"
                 },
+                onTreasureTapped={checkpoint->
+                    val meters=player?.let{p->distanceMeters(p.latitude,p.longitude,checkpoint.latitude,checkpoint.longitude)}
+                    val distanceText=when{
+                        meters==null->"okänt avstånd"
+                        meters<1000.0->"${meters.toInt()} m bort"
+                        else->String.format(java.util.Locale("sv","SE"),"%.1f km bort",meters/1000.0)
+                    }
+                    status="Ledtråd ${checkpoint.sequence}/${treasureHunt?.checkpoints?.size?:0} · $distanceText"
+                },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -621,7 +650,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                 val p0 = player
                                 scope.launch {
                                     if (worldRepository!=null) {
-                                        runCatching { worldRepository.collectNearbyBones() }.fold(
+                                        val currentPoint=p0
+                                        runCatching {
+                                            check(currentPoint!=null){"ACCURATE_LOCATION_REQUIRED"}
+                                            worldRepository.collectNearbyBones(currentPoint,latestLocationAccuracy,latestLocationHeading,latestLocationSpeed)
+                                        }.fold(
                                             onSuccess = { rewards ->
                                                 val reward=rewards.sumOf { it.playerReward }
                                                 rewards.lastOrNull()?.let { boneCount=it.playerBalance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt() }
@@ -1122,7 +1155,7 @@ private fun dirtDrawable(type:Int)=intArrayOf(
 private fun GameMap(
     player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, poops:List<WorldPoop>, treasureCheckpoints:List<TreasureCheckpoint>, pois: List<MapPoi>, nearbyPlayers:List<NearbyPlayer>,glints:List<GeoPoint>, playerMarkerId:String,home:GeoPoint?, followPlayer: Boolean,
     onManualMove: () -> Unit, onBoundsChanged: (MapBounds) -> Unit, onBoneTapped: (Bone) -> Unit,
-    onPlayerTapped: () -> Unit,onHomeTapped:()->Unit,onEmptyMapTapped:(GeoPoint)->Unit, onPileTapped: (DirtPile) -> Unit,onPoopTapped:(WorldPoop)->Unit,onPoiTapped:(MapPoi)->Unit, modifier: Modifier
+    onPlayerTapped: () -> Unit,onHomeTapped:()->Unit,onEmptyMapTapped:(GeoPoint)->Unit, onPileTapped: (DirtPile) -> Unit,onPoopTapped:(WorldPoop)->Unit,onTreasureTapped:(TreasureCheckpoint)->Unit,onPoiTapped:(MapPoi)->Unit, modifier: Modifier
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1137,6 +1170,8 @@ private fun GameMap(
     val latestPiles by rememberUpdatedState(piles)
     val latestPoops by rememberUpdatedState(poops)
     val latestPoopTap by rememberUpdatedState(onPoopTapped)
+    val latestTreasureCheckpoints by rememberUpdatedState(treasureCheckpoints)
+    val latestTreasureTap by rememberUpdatedState(onTreasureTapped)
     val latestPois by rememberUpdatedState(pois)
     val latestPoiTap by rememberUpdatedState(onPoiTapped)
     val latestBoundsChanged by rememberUpdatedState(onBoundsChanged)
@@ -1173,7 +1208,7 @@ private fun GameMap(
                     )
                     val features = libreMap.queryRenderedFeatures(
                         hitArea,
-                        *(BONE_LAYER_IDS + PILE_LAYER_IDS + POI_LAYER_IDS + arrayOf(POOP_LAYER_ID,POI_SHOP_LAYER_ID,HOME_LAYER_ID,PLAYER_LAYER_ID))
+                        *(BONE_LAYER_IDS + PILE_LAYER_IDS + POI_LAYER_IDS + arrayOf(TREASURE_LAYER_ID,POOP_LAYER_ID,POI_SHOP_LAYER_ID,HOME_LAYER_ID,PLAYER_LAYER_ID))
                     )
                     val boneIds = features.mapNotNull {
                         it.properties()?.get(BONE_ID_PROPERTY)?.asString
@@ -1198,6 +1233,9 @@ private fun GameMap(
                             }
                         if (tappedPile != null) { latestPileTap(tappedPile); true }
                         else {
+                            val checkpointIds=features.mapNotNull{it.properties()?.get("checkpointId")?.asString}.toSet()
+                            val tappedCheckpoint=latestTreasureCheckpoints.firstOrNull{it.id in checkpointIds}
+                            if(tappedCheckpoint!=null){latestTreasureTap(tappedCheckpoint);true}else{
                             val poopIds=features.mapNotNull{it.properties()?.get("poopId")?.asString}.toSet()
                             val tappedPoop=latestPoops.firstOrNull{it.id in poopIds}
                             if(tappedPoop!=null){latestPoopTap(tappedPoop);true}else{
@@ -1207,6 +1245,7 @@ private fun GameMap(
                             else if(libreMap.queryRenderedFeatures(hitArea,POI_CLUSTER_LAYER_ID).isNotEmpty()){libreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng,(libreMap.cameraPosition.zoom+2.0).coerceAtMost(15.0)),450);true}
                             else if(libreMap.queryRenderedFeatures(hitArea,HOME_LAYER_ID).isNotEmpty()){latestHomeTap();true}
                             else if (features.isNotEmpty()) { latestPlayerTap(); true } else {latestEmptyMapTap(GeoPoint(latLng.latitude,latLng.longitude));true}
+                            }
                             }
                         }
                     }
