@@ -806,7 +806,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 onAdminMapMode={adminMapMode=true},onClose={menuOpen=false},
                 onBalance={balance->boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=balance)},
                 onProfile={fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()},
-                onQuit={WalkingServiceController.stop(context);(context as? Activity)?.finishAffinity()}
+                onQuit={WalkingServiceController.stop(context);(context as? Activity)?.finishAffinity()},
+                huntLocation=player,huntAccuracy=latestLocationAccuracy
             )
         }
         activePanel?.let { panel ->
@@ -818,7 +819,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     panel=panel,profile=currentProfile.copy(boneCount=boneCount.toLong(),deviceSteps=deviceSteps),api=api,
                     shopPoi=nearbyShop,poiSettings=poiSettings,onPoiSettings={poiSettings=it},serverActionsEnabled=isOnline,onAdminMapMode={adminMapMode=true;activePanel=null},onNavigate={activePanel=it},onClose={activePanel=null;menuOpen=true},
                     onBalance={balance->boneCount=balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=balance)},
-                    onProfile={fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()}
+                    onProfile={fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()},
+                    huntLocation=player,huntAccuracy=latestLocationAccuracy
                 )
             }
         }

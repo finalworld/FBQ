@@ -53,7 +53,8 @@ private val PanelTeal=Color(0xFF168D8A)
     profile:SessionBootstrap,api:GameApiRepository,shopPoi:MapPoi?=null,
     poiSettings:PoiSettings=PoiSettings(),onPoiSettings:(PoiSettings)->Unit={},
     serverActionsEnabled:Boolean=true,onAdminMapMode:()->Unit={},onClose:()->Unit,
-    onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit,onQuit:()->Unit
+    onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit,onQuit:()->Unit,
+    huntLocation:GeoPoint?=null,huntAccuracy:Float?=null
 ) {
     var panel by remember { mutableStateOf(GamePanel.PROFILE) }
     Surface(Modifier.fillMaxSize(),color=Color(0xF7171B1D)) {
@@ -95,7 +96,7 @@ private val PanelTeal=Color(0xFF168D8A)
                         GamePanel.EQUIPMENT->EquipmentPanel(api,onProfile)
                         GamePanel.DOGS->DogsPanel(profile,api,onBalance,onProfile)
                         GamePanel.EVENT_LOG->EventLogPanel(api)
-                        GamePanel.TREASURE_HUNT->TreasureHuntPanel(api,onBalance)
+                        GamePanel.TREASURE_HUNT->TreasureHuntPanel(api,onBalance,huntLocation,huntAccuracy)
                         GamePanel.FLOCKS->FlocksPanel(api,onBalance)
                         GamePanel.HOME->HomePanel(profile,api,onBalance,onProfile)
                         GamePanel.SETTINGS->SettingsPanel(profile,api,poiSettings,onPoiSettings,onProfile)
@@ -125,7 +126,8 @@ private val PanelTeal=Color(0xFF168D8A)
     panel:GamePanel,profile:SessionBootstrap,api:GameApiRepository,shopPoi:MapPoi?=null,
     poiSettings:PoiSettings=PoiSettings(),onPoiSettings:(PoiSettings)->Unit={},
     serverActionsEnabled:Boolean=true,onAdminMapMode:()->Unit={},
-    onNavigate:(GamePanel)->Unit={},onClose:()->Unit,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit
+    onNavigate:(GamePanel)->Unit={},onClose:()->Unit,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit,
+    huntLocation:GeoPoint?=null,huntAccuracy:Float?=null
 ) {
     Surface(Modifier.fillMaxSize(),color=PanelDark) {
         Column(Modifier.statusBarsPadding().navigationBarsPadding()) {
@@ -145,7 +147,7 @@ private val PanelTeal=Color(0xFF168D8A)
                     GamePanel.EQUIPMENT -> EquipmentPanel(api,onProfile)
                     GamePanel.DOGS -> DogsPanel(profile,api,onBalance,onProfile)
                     GamePanel.EVENT_LOG -> EventLogPanel(api)
-                    GamePanel.TREASURE_HUNT -> TreasureHuntPanel(api,onBalance)
+                    GamePanel.TREASURE_HUNT -> TreasureHuntPanel(api,onBalance,huntLocation,huntAccuracy)
                     GamePanel.FLOCKS -> FlocksPanel(api,onBalance)
                     GamePanel.HOME -> HomePanel(profile,api,onBalance,onProfile)
                     GamePanel.SETTINGS -> SettingsPanel(profile,api,poiSettings,onPoiSettings,onProfile)
@@ -164,13 +166,28 @@ private fun panelTitleResource(p:GamePanel)=when(p){
     GamePanel.ADMIN->R.string.panel_admin;GamePanel.SHOP->R.string.panel_shop
 }
 
-@Composable private fun TreasureHuntPanel(api:GameApiRepository,onBalance:(Long)->Unit){
+private fun huntError(error:Throwable):String {
+    val raw=error.message.orEmpty()
+    return when {
+        "GPS_REQUIRED" in raw -> "Väntar på en aktuell GPS-position. Gå utomhus och försök igen om några sekunder."
+        "GPS_INACCURATE" in raw -> "GPS-signalen är inte tillräckligt exakt ännu. Försök igen om några sekunder."
+        "ACTIVE_HUNT_EXISTS" in raw -> "Du har redan en aktiv skattjakt."
+        "ALREADY_IN_TEAM" in raw -> "Du är redan med i ett jaktlag."
+        "PLAYER_IN_TEAM" in raw -> "Spelaren är redan med i ett annat aktivt jaktlag."
+        "PLAYER_NOT_NEARBY" in raw -> "Spelaren måste vara inom 200 meter och ha spelet öppet."
+        "INSUFFICIENT_BONES" in raw -> "Du har inte tillräckligt många ben."
+        "NOT_ENOUGH_WALKABLE_POINTS" in raw -> "Det gick inte att skapa en säker runda här. Flytta dig lite och försök igen."
+        else -> raw.ifBlank { "Något gick fel. Försök igen." }
+    }
+}
+
+@Composable private fun TreasureHuntPanel(api:GameApiRepository,onBalance:(Long)->Unit,huntLocation:GeoPoint?,huntAccuracy:Float?){
     val scope=rememberCoroutineScope()
     var state by remember{mutableStateOf<TreasureHuntState?>(null)}
     var team by remember{mutableStateOf<HuntTeamState?>(null)}
     var message by remember{mutableStateOf<String?>(null)}
     var busy by remember{mutableStateOf(false)}
-    suspend fun refresh(){runCatching{api.treasureHunt()}.onSuccess{state=it}.onFailure{message=it.message};runCatching{api.huntTeam()}.onSuccess{team=it}.onFailure{message=it.message}}
+    suspend fun refresh(){runCatching{api.treasureHunt()}.onSuccess{state=it}.onFailure{message=huntError(it)};runCatching{api.huntTeam()}.onSuccess{team=it}.onFailure{message=huntError(it)}}
     fun reload(){scope.launch{refresh()}}
     LaunchedEffect(Unit){while(true){refresh();delay(5000)}}
     LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){
@@ -181,17 +198,17 @@ private fun panelTitleResource(p:GamePanel)=when(p){
         team?.invites?.forEach{invite->item{
             Column(Modifier.fillMaxWidth().background(Color(0xFF293438),RoundedCornerShape(8.dp)).padding(10.dp)){
                 Text("${invite.leaderName} bjuder in dig till sitt jaktlag",color=PanelCream,fontWeight=FontWeight.Bold)
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onClick={scope.launch{runCatching{api.respondHuntTeamInvite(invite.id,true)}.onSuccess{refresh()}.onFailure{message=it.message}}}){Text("GÅ MED")};OutlinedButton(onClick={scope.launch{runCatching{api.respondHuntTeamInvite(invite.id,false)}.onSuccess{refresh()}}}){Text("NEKA")}}
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onClick={scope.launch{runCatching{api.respondHuntTeamInvite(invite.id,true)}.onSuccess{refresh()}.onFailure{message=huntError(it)}}}){Text("GÅ MED")};OutlinedButton(onClick={scope.launch{runCatching{api.respondHuntTeamInvite(invite.id,false)}.onSuccess{refresh()}.onFailure{message=huntError(it)}}}){Text("NEKA")}}
             }
         }}
         item{
             Text("JAKTLAG",color=PanelGold,fontWeight=FontWeight.Black,fontSize=18.sp)
             val t=team
-            if(t?.teamId==null) Button(enabled=!busy,onClick={scope.launch{busy=true;runCatching{api.createHuntTeam()}.onSuccess{message="Jaktlaget skapades";refresh()}.onFailure{message=it.message};busy=false}},modifier=Modifier.fillMaxWidth()){Text("SKAPA JAKTLAG")}
+            if(t?.teamId==null) Button(enabled=!busy,onClick={scope.launch{busy=true;runCatching{api.createHuntTeam()}.onSuccess{message="Jaktlaget skapades";refresh()}.onFailure{message=huntError(it)};busy=false}},modifier=Modifier.fillMaxWidth()){Text("SKAPA JAKTLAG")}
             else Column(verticalArrangement=Arrangement.spacedBy(5.dp)){
-                t.members.forEach{m->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(5.dp)).padding(8.dp),verticalAlignment=Alignment.CenterVertically){Text("${m.displayName} · Level ${m.level}${if(m.isLeader)"  👑" else ""}",Modifier.weight(1f),color=PanelCream);if(t.isLeader&&!m.isLeader)TextButton(onClick={scope.launch{runCatching{api.kickHuntTeamMember(m.playerId)}.onSuccess{refresh()}.onFailure{message=it.message}}}){Text("SPARKA",color=Color(0xFFFF6B62))}}}
-                if(t.isLeader&&t.nearby.isNotEmpty()){Text("Spelare inom 200 meter",color=PanelGold,fontSize=13.sp);t.nearby.forEach{p->Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("${p.displayName} · ${p.distanceM} m",Modifier.weight(1f),color=PanelCream);TextButton(onClick={scope.launch{runCatching{api.inviteToHuntTeam(p.playerId)}.onSuccess{message="Inbjudan skickad"}.onFailure{message=it.message}}}){Text("BJUD IN")}}}}
-                OutlinedButton(onClick={scope.launch{runCatching{api.leaveHuntTeam()}.onSuccess{message="Du lämnade jaktlaget";refresh()}.onFailure{message=it.message}}},modifier=Modifier.fillMaxWidth()){Text(if(t.isLeader)"UPPLÖS JAKTLAG" else "LÄMNA JAKTLAG")}
+                t.members.forEach{m->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(5.dp)).padding(8.dp),verticalAlignment=Alignment.CenterVertically){Text("${m.displayName} · Level ${m.level}${if(m.isLeader)"  👑" else ""}",Modifier.weight(1f),color=PanelCream);if(t.isLeader&&!m.isLeader)TextButton(onClick={scope.launch{runCatching{api.kickHuntTeamMember(m.playerId)}.onSuccess{refresh()}.onFailure{message=huntError(it)}}}){Text("SPARKA",color=Color(0xFFFF6B62))}}}
+                if(t.isLeader&&t.nearby.isNotEmpty()){Text("Spelare inom 200 meter",color=PanelGold,fontSize=13.sp);t.nearby.forEach{p->Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("${p.displayName} · ${p.distanceM} m",Modifier.weight(1f),color=PanelCream);TextButton(onClick={scope.launch{runCatching{api.inviteToHuntTeam(p.playerId)}.onSuccess{message="Inbjudan skickad"}.onFailure{message=huntError(it)}}}){Text("BJUD IN")}}}}
+                OutlinedButton(onClick={scope.launch{runCatching{api.leaveHuntTeam()}.onSuccess{message="Du lämnade jaktlaget";refresh()}.onFailure{message=huntError(it)}}},modifier=Modifier.fillMaxWidth()){Text(if(t.isLeader)"UPPLÖS JAKTLAG" else "LÄMNA JAKTLAG")}
             }
         }
         val active=state?.takeIf{it.active}
@@ -200,7 +217,11 @@ private fun panelTitleResource(p:GamePanel)=when(p){
                 val cost=25+25*km
                 Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(8.dp)).padding(10.dp),verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){Text("$km km",color=PanelCream,fontWeight=FontWeight.Black);Text("$cost ben · ${25*km} XP",color=PanelGold,fontSize=12.sp)}
-                    Button(enabled=!busy,onClick={busy=true;scope.launch{runCatching{api.startTreasureHunt(km);api.boneBalance()}.onSuccess{onBalance(it);message="Skattjakten har startat!";reload()}.onFailure{message=it.message}.also{busy=false}}}){Text("STARTA")}
+                    Button(enabled=!busy,onClick={
+                        val location=huntLocation;val accuracy=huntAccuracy
+                        if(location==null||accuracy==null){message="Väntar på GPS-position. Försök igen om några sekunder."}
+                        else {busy=true;scope.launch{runCatching{api.startTreasureHunt(km,location.latitude,location.longitude,accuracy);api.boneBalance()}.onSuccess{onBalance(it);message="Skattjakten har startat!";reload()}.onFailure{message=huntError(it)}.also{busy=false}}}
+                    }){Text("STARTA")}
                 }
             }
         }else{

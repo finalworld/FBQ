@@ -173,8 +173,9 @@ class GameApiRepository(private val client:SupabaseClient) {
         val response=client.postgrest.rpc("get_treasure_hunt_state")
         return decodeRpcObject(response.data)
     }
-    suspend fun startTreasureHunt(lengthKm:Int) = client.postgrest.rpc("start_treasure_hunt",buildJsonObject {
+    suspend fun startTreasureHunt(lengthKm:Int,latitude:Double,longitude:Double,accuracy:Float) = client.postgrest.rpc("start_treasure_hunt",buildJsonObject {
         put("p_length_km",lengthKm);put("p_points",buildJsonArray{})
+        put("p_latitude",latitude);put("p_longitude",longitude);put("p_accuracy_m",accuracy)
     })
     suspend fun claimTreasureCheckpoint(id:String) = client.postgrest.rpc("claim_treasure_checkpoint",buildJsonObject { put("p_checkpoint_id",id) })
     suspend fun abortTreasureHunt() = client.postgrest.rpc("abort_treasure_hunt")
