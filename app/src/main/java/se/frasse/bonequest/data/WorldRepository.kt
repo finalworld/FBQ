@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.math.cos
@@ -35,6 +38,15 @@ data class WorldPoop(
 )
 
 @Serializable data class PoopCollectResult(@SerialName("poop_id") val poopId:String,val xp:Int)
+
+private val worldRpcJson = Json { ignoreUnknownKeys = true }
+
+private inline fun <reified T> decodeWorldRpcObject(raw:String):T {
+    val element=worldRpcJson.parseToJsonElement(raw)
+    val objectElement=if(element is JsonArray) element.firstOrNull()
+        ?: error("Databasen returnerade ett tomt svar") else element
+    return worldRpcJson.decodeFromString(objectElement.toString())
+}
 
 @Serializable
 data class NearbyPlayer(
@@ -155,9 +167,12 @@ class WorldRepository(private val client:SupabaseClient) {
         "open_dirt_pile",buildJsonObject { put("p_pile_id",id) }
     ).decodeSingle()
 
-    suspend fun collectPoop(id:String):PoopCollectResult = client.postgrest.rpc(
-        "collect_dog_poop",buildJsonObject { put("p_poop_id",id) }
-    ).decodeSingle()
+    suspend fun collectPoop(id:String):PoopCollectResult {
+        val response=client.postgrest.rpc(
+            "collect_dog_poop",buildJsonObject { put("p_poop_id",id) }
+        )
+        return decodeWorldRpcObject(response.data)
+    }
 }
 
 private fun WorldBoneRow.hasValidMapData():Boolean =
