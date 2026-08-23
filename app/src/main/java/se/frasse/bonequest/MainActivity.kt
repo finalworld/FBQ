@@ -537,9 +537,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
             collecting=false
         }}))}
         nearTreasure?.let{checkpoint->add(CompactAction(R.drawable.marker_default_paw,"TA LEDTRÅD","${checkpoint.sequence}/${treasureHunt?.checkpoints?.size?:0}",enabled=isOnline&&!collecting,onClick={scope.launch{
-            collecting=true;val p=player
+            collecting=true;val p=player;val huntBefore=treasureHunt;val wasLast=huntBefore?.checkpoints?.count{!it.claimed}==1
             runCatching{check(p!=null){"GPS_REQUIRED"};check(latestLocationAccuracy<=GpsRules.MAX_ACCURACY_METERS){"GPS_INACCURATE"};gameApi?.claimTreasureCheckpoint(checkpoint.id,p.latitude,p.longitude,latestLocationAccuracy)?:error("OFFLINE")}
-                .onSuccess{result->if(result.completed){treasureResult=result;treasureHunt=null}else{treasureHunt=runCatching{gameApi?.treasureHunt()}.getOrNull()?.takeIf{it.active};status="Ledtråden är tagen!"}}
+                .onSuccess{result->if(result.completed||wasLast){treasureResult=result.copy(completed=true,xpReward=if(result.xpReward>0)result.xpReward else huntBefore?.xpReward?:0);treasureHunt=null}else{treasureHunt=runCatching{gameApi?.treasureHunt()}.getOrNull()?.takeIf{it.active};status="Ledtråden är tagen!"}}
                 .onFailure{status=when{it.message?.contains("TOO_FAR")==true->"Du är för långt från ledtråden.";it.message?.contains("GPS_INACCURATE")==true||it.message?.contains("GPS_REQUIRED")==true->"GPS-signalen är inte tillräckligt exakt ännu.";it.message?.contains("ALREADY_CLAIMED")==true->"Ledtråden är redan tagen.";else->"Kunde inte ta ledtråden: ${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"}}
             collecting=false
         }}))}

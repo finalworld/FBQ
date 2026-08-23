@@ -184,9 +184,14 @@ class GameApiRepository(private val client:SupabaseClient) {
         put("p_latitude",latitude);put("p_longitude",longitude);put("p_accuracy_m",accuracy)
     })
     suspend fun claimTreasureCheckpoint(id:String,latitude:Double,longitude:Double,accuracy:Float):TreasureClaimResult {
-        val response=client.postgrest.rpc("claim_treasure_checkpoint",buildJsonObject {
+        val attempt=runCatching{client.postgrest.rpc("claim_treasure_checkpoint",buildJsonObject {
             put("p_checkpoint_id",id);put("p_latitude",latitude);put("p_longitude",longitude);put("p_accuracy_m",accuracy)
-        })
+        })}
+        val response=attempt.getOrElse{error->
+            if(!error.isMissingRpc())throw error
+            client.postgrest.rpc("update_presence",buildJsonObject{put("latitude",latitude);put("longitude",longitude);put("accuracy_m",accuracy);put("heading",0);put("is_background",false)})
+            client.postgrest.rpc("claim_treasure_checkpoint",buildJsonObject{put("p_checkpoint_id",id)})
+        }
         return decodeRpcObject(response.data)
     }
     suspend fun abortTreasureHunt() = client.postgrest.rpc("abort_treasure_hunt")
@@ -277,3 +282,5 @@ class GameApiRepository(private val client:SupabaseClient) {
     })
     suspend fun signOut() = client.auth.signOut()
 }
+
+internal fun Throwable.isMissingRpc():Boolean = message.orEmpty().let{"PGRST202" in it||"Could not find the function" in it||"schema cache" in it}
