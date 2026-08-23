@@ -53,7 +53,8 @@ data class NearbyPlayer(
     @SerialName("player_id") val playerId:String,
     val latitude:Double,val longitude:Double,val heading:Float,
     @SerialName("marker_id") val markerId:String,
-    @SerialName("shared_flock_ids") val sharedFlockIds:List<String>
+    @SerialName("shared_flock_ids") val sharedFlockIds:List<String>,
+    @SerialName("position_age_seconds") val positionAgeSeconds:Int=0
 )
 
 @Serializable
@@ -99,7 +100,7 @@ class WorldRepository(private val client:SupabaseClient) {
 
     suspend fun subscribe() { channel.subscribe(blockUntilSubscribed=true) }
 
-    suspend fun loadNearby(center:GeoPoint,radiusMeters:Double=3_000.0):WorldSnapshot {
+    suspend fun loadNearby(center:GeoPoint,radiusMeters:Double=2_000.0):WorldSnapshot {
         val latDelta=radiusMeters/111_320.0
         val lonDelta=radiusMeters/(111_320.0*cos(Math.toRadians(center.latitude)).coerceAtLeast(.05))
         val bones=client.from("world_bones").select {
@@ -171,16 +172,17 @@ class WorldRepository(private val client:SupabaseClient) {
         return client.postgrest.rpc("collect_nearby_bones").decodeList()
     }
 
-    suspend fun openPile(id:String):PileResult = client.postgrest.rpc(
-        "open_dirt_pile",buildJsonObject { put("p_pile_id",id) }
+    suspend fun openPile(id:String,point:GeoPoint,accuracy:Float):PileResult = client.postgrest.rpc(
+        "open_dirt_pile",buildJsonObject { put("p_pile_id",id);put("p_latitude",point.latitude);put("p_longitude",point.longitude);put("p_accuracy_m",accuracy) }
     ).decodeSingle()
 
     suspend fun collectPoop(
         id:String,point:GeoPoint,accuracy:Float,heading:Float=0f,speed:Float?=null
     ):PoopCollectResult {
-        updatePresence(point,accuracy,heading,speed)
         val response=client.postgrest.rpc(
-            "collect_dog_poop",buildJsonObject { put("p_poop_id",id) }
+            "collect_dog_poop",buildJsonObject {
+                put("p_poop_id",id);put("p_latitude",point.latitude);put("p_longitude",point.longitude);put("p_accuracy_m",accuracy)
+            }
         )
         return decodeWorldRpcObject(response.data)
     }

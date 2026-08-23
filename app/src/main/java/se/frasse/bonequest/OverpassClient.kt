@@ -36,7 +36,7 @@ object OverpassClient {
             }
         }
     }
-    suspend fun generateBones(center: GeoPoint, radiusMeters: Int = 3000): List<Bone> = withContext(Dispatchers.IO) {
+    suspend fun generateBones(center: GeoPoint, radiusMeters: Int = 2000): List<Bone> = withContext(Dispatchers.IO) {
         val query = """
             [out:json][timeout:25];
             way(around:$radiusMeters,${center.latitude},${center.longitude})

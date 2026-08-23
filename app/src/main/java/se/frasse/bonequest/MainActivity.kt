@@ -150,6 +150,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var pileRewardSpinning by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var pendingPuppy by remember { mutableStateOf<PendingPuppy?>(null) }
     var activeDog by remember { mutableStateOf<DogProfile?>(null) }
+    var activeDogInfo by remember { mutableStateOf<DogProfile?>(null) }
+    var treasureResult by remember { mutableStateOf<TreasureClaimResult?>(null) }
     var dogCardCollapsed by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var pendingPuppyName by remember { mutableStateOf("Valpen") }
     var pileReelBone by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
@@ -283,7 +285,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     if(!collecting&&sharedGain>0&&sharedBones>0) status="Ni tog benet tillsammans · +$sharedGain ben"
                     boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                     currentProfile=fresh
-                };runCatching{api.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}} }
+                };runCatching{api.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}};runCatching{api.dogs().firstOrNull{it.isActive}}.onSuccess{activeDog=it} }
                 gameApi?.let { api -> runCatching { api.latestSharedBoneReward() }.onSuccess { shared ->
                     if(sharedRewardInitialized&&shared!=null&&shared.collectionId!=latestSharedRewardId){
                         status="Ni tog ${localizedBoneName(context,shared.boneType)} tillsammans · +${shared.boneValue} ben"
@@ -391,7 +393,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     return@start
                 }
                 val nearbyBoneCount = bones.count {
-                    distanceMeters(point.latitude, point.longitude, it.latitude, it.longitude) <= 3_000.0
+                    distanceMeters(point.latitude, point.longitude, it.latitude, it.longitude) <= 2_000.0
                 }
                 if ((!repository.generatedNear(point) || nearbyBoneCount < 20) && !loadingBones) {
                     loadingBones = true
@@ -423,7 +425,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     val nearBone = remember(player, bones) {
         val p = player ?: return@remember null
         bones.minByOrNull { distanceMeters(p.latitude, p.longitude, it.latitude, it.longitude) }
-            ?.takeIf { distanceMeters(p.latitude, p.longitude, it.latitude, it.longitude) <= 25.0 }
+            ?.takeIf { distanceMeters(p.latitude, p.longitude, it.latitude, it.longitude) <= GpsRules.interactionRadius(latestLocationAccuracy) }
     }
     val nearPile = remember(player,piles) {
         val p=player?:return@remember null
@@ -453,8 +455,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
             if(currentProfile.barkEnabled) runCatching { DogBarkPlayer.play() }
         }
     }
-    val nearPoop=remember(player,poops){val p=player?:return@remember null;poops.minByOrNull{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)}?.takeIf{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)<=30.0}}
-    val nearTreasure=remember(player,treasureHunt){val p=player?:return@remember null;treasureHunt?.checkpoints?.filterNot{it.claimed}?.minByOrNull{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)}?.takeIf{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)<=30.0}}
+    val interactionRadius=GpsRules.interactionRadius(latestLocationAccuracy)
+    val nearPoop=remember(player,poops,interactionRadius){val p=player?:return@remember null;poops.minByOrNull{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)}?.takeIf{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)<=interactionRadius}}
+    val nearTreasure=remember(player,treasureHunt,interactionRadius){val p=player?:return@remember null;treasureHunt?.checkpoints?.filterNot{it.claimed}?.minByOrNull{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)}?.takeIf{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)<=interactionRadius}}
     val activityPermissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted->
         if(granted)permissionRefresh++
     }
@@ -533,7 +536,13 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 }}
             collecting=false
         }}))}
-        nearTreasure?.let{checkpoint->add(CompactAction(R.drawable.marker_default_paw,"TA LEDTRÅD","${checkpoint.sequence}/${treasureHunt?.checkpoints?.size?:0}",enabled=isOnline&&!collecting,onClick={scope.launch{collecting=true;runCatching{gameApi?.claimTreasureCheckpoint(checkpoint.id);gameApi?.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt?.takeIf{it.active};status="Ledtråden är tagen!"}.onFailure{status="Kunde inte ta ledtråden."};collecting=false}}))}
+        nearTreasure?.let{checkpoint->add(CompactAction(R.drawable.marker_default_paw,"TA LEDTRÅD","${checkpoint.sequence}/${treasureHunt?.checkpoints?.size?:0}",enabled=isOnline&&!collecting,onClick={scope.launch{
+            collecting=true;val p=player
+            runCatching{check(p!=null){"GPS_REQUIRED"};check(latestLocationAccuracy<=GpsRules.MAX_ACCURACY_METERS){"GPS_INACCURATE"};gameApi?.claimTreasureCheckpoint(checkpoint.id,p.latitude,p.longitude,latestLocationAccuracy)?:error("OFFLINE")}
+                .onSuccess{result->if(result.completed){treasureResult=result;treasureHunt=null}else{treasureHunt=runCatching{gameApi?.treasureHunt()}.getOrNull()?.takeIf{it.active};status="Ledtråden är tagen!"}}
+                .onFailure{status=when{it.message?.contains("TOO_FAR")==true->"Du är för långt från ledtråden.";it.message?.contains("GPS_INACCURATE")==true||it.message?.contains("GPS_REQUIRED")==true->"GPS-signalen är inte tillräckligt exakt ännu.";it.message?.contains("ALREADY_CLAIMED")==true->"Ledtråden är redan tagen.";else->"Kunde inte ta ledtråden: ${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"}}
+            collecting=false
+        }}))}
         if(atHome)add(CompactAction(R.drawable.marker_default_paw,"HEM","AUTOMAT",onClick={activePanel=GamePanel.HOME}))
     }
 
@@ -609,7 +618,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             )
 
             activeDog?.let { dog ->
-                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=102.dp,end=6.dp).zIndex(4f))
+                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},{activeDogInfo=dog},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=102.dp,end=6.dp).zIndex(4f))
             }
 
             if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=126.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
@@ -722,8 +731,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
             poopRewardXp?.let{xp->
                 AlertDialog(onDismissRequest={},title={Text("TACK FÖR ATT DU HÅLLER RENT!",fontWeight=FontWeight.Black)},text={Text("Du plockade upp hundbajset och fick $xp XP.")},confirmButton={Button(onClick={poopRewardXp=null}){Text("OK")}})
             }
+            treasureResult?.let{result->AlertDialog(onDismissRequest={},title={Text("BRA JOBBAT!",fontWeight=FontWeight.Black,fontSize=26.sp,color=androidx.compose.ui.graphics.Color(0xFFFFC85B))},text={Column(Modifier.fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(10.dp)){Text("Skatten är hittad",fontSize=20.sp,fontWeight=FontWeight.Black);Text("BELÖNINGAR",fontSize=12.sp,color=androidx.compose.ui.graphics.Color(0xFFE2AA3D),fontWeight=FontWeight.Bold);Text("+${result.xpReward} XP",fontSize=22.sp,fontWeight=FontWeight.Black);result.frameName?.let{Text("Ny markörram: $it",textAlign=TextAlign.Center)}}},confirmButton={Button(onClick={treasureResult=null}){Text("TACK")}})}
+            activeDogInfo?.let{dog->ActiveDogInfoDialog(dog){activeDogInfo=null}}
             pileToConfirm?.let{pile->
-                AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text(stringResource(R.string.ui_text_027))},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp),horizontalAlignment=Alignment.CenterHorizontally){DogBoneSlotMachine(pile.type,"JORDHÖG · ${pile.cost} BEN",false,Modifier.widthIn(max=260.dp),oddsLines=pileOddsLines(pile.cost));Text(stringResource(R.string.pile_confirm_body,pile.cost))}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{if(worldRepository!=null)runCatching{worldRepository.openPile(pile.id)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status=context.getString(R.string.pile_spinning)},onFailure={status=when{it.message?.contains("PILE_ALREADY_CLAIMED")==true->context.getString(R.string.pile_claimed_first);it.message?.contains("INSUFFICIENT_BONES")==true->context.getString(R.string.action_need_bones,pile.cost);it.message?.contains("PILE_OUT_OF_RANGE")==true->"Du är för långt från högen.";it.message?.contains("ACCURATE_LOCATION_REQUIRED")==true->context.getString(R.string.bone_gps_inaccurate);else->"${context.getString(R.string.pile_open_failed)} ${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"}});collecting=false;selectedPile=null;pileToConfirm=null}}){Text(stringResource(R.string.pile_pay_button,pile.cost))}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text(stringResource(R.string.ui_text_006))}})
+                AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text(stringResource(R.string.ui_text_027))},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp),horizontalAlignment=Alignment.CenterHorizontally){DogBoneSlotMachine(pile.type,"JORDHÖG · ${pile.cost} BEN",false,Modifier.widthIn(max=260.dp),oddsLines=pileOddsLines(pile.cost));Text(stringResource(R.string.pile_confirm_body,pile.cost))}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{val p=player;if(worldRepository!=null&&p!=null)runCatching{worldRepository.openPile(pile.id,p,latestLocationAccuracy)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status=context.getString(R.string.pile_spinning)},onFailure={status=when{it.message?.contains("PILE_ALREADY_CLAIMED")==true->context.getString(R.string.pile_claimed_first);it.message?.contains("INSUFFICIENT_BONES")==true->context.getString(R.string.action_need_bones,pile.cost);it.message?.contains("PILE_OUT_OF_RANGE")==true->"Du är för långt från högen.";it.message?.contains("GPS_INACCURATE")==true||it.message?.contains("GPS_REQUIRED")==true->context.getString(R.string.bone_gps_inaccurate);else->"${context.getString(R.string.pile_open_failed)} ${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"}})else status=context.getString(R.string.bone_gps_inaccurate);collecting=false;selectedPile=null;pileToConfirm=null}}){Text(stringResource(R.string.pile_pay_button,pile.cost))}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text(stringResource(R.string.ui_text_006))}})
             }
             if (statusText != null) {
                 Surface(
@@ -968,7 +979,7 @@ private fun timeUntilRefresh(updatedAt:String,hours:Long=10):String=runCatching{
     }
 }
 
-@Composable private fun ActiveDogHudCard(dog:DogProfile,collapsed:Boolean,onToggle:()->Unit,modifier:Modifier=Modifier){
+@Composable private fun ActiveDogHudCard(dog:DogProfile,collapsed:Boolean,onToggle:()->Unit,onInfo:()->Unit,modifier:Modifier=Modifier){
     val context=LocalContext.current
     val dogRes=remember(dog.breed,dog.stage){context.resources.getIdentifier("dog_${dog.breed.coerceIn(0,9).toString().padStart(2,'0')}_stage_${(dog.stage.coerceIn(0,5)-1).coerceAtLeast(0)}","drawable",context.packageName)}
     val parchment=androidx.compose.ui.graphics.Color(0xFFE7C77E)
@@ -977,7 +988,7 @@ private fun timeUntilRefresh(updatedAt:String,hours:Long=10):String=runCatching{
     val gold=androidx.compose.ui.graphics.Color(0xFFD99A2B)
     Column(modifier.width(116.dp),horizontalAlignment=Alignment.End){
         if(!collapsed)Column(
-            Modifier.fillMaxWidth().height(116.dp)
+            Modifier.fillMaxWidth().height(132.dp).clickable(onClick=onInfo)
                 .background(parchment,RoundedCornerShape(topStart=5.dp,bottomStart=5.dp))
                 .drawBehind{
                     drawRoundRect(frame,cornerRadius=androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()),style=Stroke(4.dp.toPx()))
@@ -988,7 +999,8 @@ private fun timeUntilRefresh(updatedAt:String,hours:Long=10):String=runCatching{
             Box(Modifier.weight(1f).fillMaxWidth().padding(start=5.dp,end=5.dp,top=5.dp),contentAlignment=Alignment.Center){
                 if(dogRes!=0)Image(painterResource(dogRes),dog.name,Modifier.fillMaxSize(),contentScale=ContentScale.Fit)
             }
-            Text(dog.name,Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=5.dp),color=ink,fontSize=11.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1,overflow=TextOverflow.Ellipsis)
+            Text(dog.name,Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=2.dp),color=ink,fontSize=11.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1,overflow=TextOverflow.Ellipsis)
+            Text("${"%.1f".format(dog.distanceMeters/1000.0)} / ${dog.developmentKm} km · Level ${dog.stage.coerceAtLeast(1)}",Modifier.fillMaxWidth().padding(start=3.dp,end=3.dp,bottom=4.dp),color=ink,fontSize=8.sp,textAlign=TextAlign.Center,maxLines=1)
         }
         Box(
             Modifier.width(46.dp).height(24.dp)
@@ -999,6 +1011,20 @@ private fun timeUntilRefresh(updatedAt:String,hours:Long=10):String=runCatching{
         ){Text(if(collapsed)"▼" else "▲",color=ink,fontSize=11.sp,fontWeight=FontWeight.Black)}
     }
 }
+
+@Composable private fun ActiveDogInfoDialog(dog:DogProfile,onClose:()->Unit){
+    val context=LocalContext.current
+    val dogRes=dogDrawableForInfo(context,dog.breed,dog.stage)
+    AlertDialog(onDismissRequest=onClose,title={Text("${dog.name} ${if(dog.gender=="female")"♀" else "♂"}",fontWeight=FontWeight.Black)},text={Column(Modifier.fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(7.dp)){
+        if(dogRes!=0)Image(painterResource(dogRes),dog.name,Modifier.size(150.dp),contentScale=ContentScale.Fit)
+        Text("Level ${dog.stage.coerceAtLeast(1)} · ${if(dog.isPuppy)"Valp" else "Vuxen hund"}",fontWeight=FontWeight.Bold)
+        Text("Tillväxt: ${"%.2f".format(dog.distanceMeters/1000.0)} / ${dog.developmentKm} km")
+        dog.foundArea?.let{Text("Hittad: $it",fontSize=12.sp)}
+        if(dog.stage>=5){listOfNotNull(dog.perkPrimary?.let{it to (dog.perkPrimaryLevel?:1)},dog.perkSecondary?.let{it to (dog.perkSecondaryLevel?:1)}).forEach{(id,level)->val perk=dogPerkInfo(id,level);Column(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFF252C2F),RoundedCornerShape(6.dp)).padding(8.dp)){Text("${perk.name} · nivå $level",fontWeight=FontWeight.Black,color=androidx.compose.ui.graphics.Color(0xFFFFC85B));Text(perk.description,fontSize=12.sp);Text("Aktuell bonus: ${perk.bonus}",fontSize=12.sp,fontWeight=FontWeight.Bold)}}}else Text("Perks avslöjas när hunden blir vuxen.",fontSize=12.sp)
+    }},confirmButton={Button(onClick=onClose){Text("STÄNG")}})
+}
+
+private fun dogDrawableForInfo(context:android.content.Context,breed:Int,stage:Int)=context.resources.getIdentifier("dog_${breed.coerceIn(0,9).toString().padStart(2,'0')}_stage_${(stage.coerceIn(0,5)-1).coerceAtLeast(0)}","drawable",context.packageName)
 
 @Composable private fun LevelUpDialog(profile:SessionBootstrap,onContinue:()->Unit){
     AlertDialog(onDismissRequest={},title={Text("LEVEL UP!",color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontWeight=FontWeight.Black)},
@@ -1504,7 +1530,7 @@ private fun treasureFeatureCollection(checkpoints:List<TreasureCheckpoint>):Feat
 
 private fun nearbyPlayerFeatureCollection(players:List<NearbyPlayer>):FeatureCollection=FeatureCollection.fromFeatures(
     players.map { player->Feature.fromGeometry(Point.fromLngLat(player.longitude,player.latitude)).apply {
-        addStringProperty("playerId",player.playerId);addStringProperty("markerImage","nearby-${player.markerId}");addNumberProperty("sharedFlocks",player.sharedFlockIds.size)
+        addStringProperty("playerId",player.playerId);addStringProperty("markerImage","nearby-${player.markerId}");addNumberProperty("sharedFlocks",player.sharedFlockIds.size);addNumberProperty("positionAge",player.positionAgeSeconds)
     }}
 )
 

@@ -94,6 +94,12 @@ private inline fun <reified T> decodeRpcObject(raw:String):T {
     @SerialName("owner_player_id") val ownerPlayerId:String?=null,
     val checkpoints:List<TreasureCheckpoint> = emptyList()
 )
+@Serializable data class TreasureClaimResult(
+    val claimed:Boolean=true,val sequence:Int=0,val completed:Boolean=false,
+    @SerialName("xp_reward") val xpReward:Int=0,
+    @SerialName("frame_id") val frameId:String?=null,
+    @SerialName("frame_name") val frameName:String?=null
+)
 @Serializable data class HuntTeamMember(
     @SerialName("player_id") val playerId:String,
     @SerialName("display_name") val displayName:String,
@@ -177,7 +183,12 @@ class GameApiRepository(private val client:SupabaseClient) {
         put("p_length_km",lengthKm);put("p_points",buildJsonArray{})
         put("p_latitude",latitude);put("p_longitude",longitude);put("p_accuracy_m",accuracy)
     })
-    suspend fun claimTreasureCheckpoint(id:String) = client.postgrest.rpc("claim_treasure_checkpoint",buildJsonObject { put("p_checkpoint_id",id) })
+    suspend fun claimTreasureCheckpoint(id:String,latitude:Double,longitude:Double,accuracy:Float):TreasureClaimResult {
+        val response=client.postgrest.rpc("claim_treasure_checkpoint",buildJsonObject {
+            put("p_checkpoint_id",id);put("p_latitude",latitude);put("p_longitude",longitude);put("p_accuracy_m",accuracy)
+        })
+        return decodeRpcObject(response.data)
+    }
     suspend fun abortTreasureHunt() = client.postgrest.rpc("abort_treasure_hunt")
     suspend fun rerollTreasureHunt() = client.postgrest.rpc("reroll_treasure_hunt")
     suspend fun huntTeam():HuntTeamState {
