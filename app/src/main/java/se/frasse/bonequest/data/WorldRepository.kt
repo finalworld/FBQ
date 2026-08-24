@@ -172,6 +172,12 @@ class WorldRepository(private val client:SupabaseClient) {
         return client.postgrest.rpc("collect_nearby_bones").decodeList()
     }
 
+    suspend fun refreshWorld(point:GeoPoint) {
+        client.postgrest.rpc("refresh_world_nearby",buildJsonObject {
+            put("p_latitude",point.latitude); put("p_longitude",point.longitude)
+        })
+    }
+
     suspend fun openPile(id:String,point:GeoPoint,accuracy:Float):PileResult {
         val attempt=runCatching{client.postgrest.rpc("open_dirt_pile",buildJsonObject { put("p_pile_id",id);put("p_latitude",point.latitude);put("p_longitude",point.longitude);put("p_accuracy_m",accuracy) })}
         val response=attempt.getOrElse{error->if(!error.isMissingRpc())throw error;updatePresence(point,accuracy);client.postgrest.rpc("open_dirt_pile",buildJsonObject{put("p_pile_id",id)})}

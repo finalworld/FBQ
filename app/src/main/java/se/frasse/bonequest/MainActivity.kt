@@ -286,6 +286,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                     currentProfile=fresh
                 };runCatching{api.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}};runCatching{api.dogs().firstOrNull{it.isActive}}.onSuccess{activeDog=it} }
+                gameApi?.let { api -> if(treasureResult==null) runCatching { api.pendingTreasureReward() }.onSuccess { pending ->
+                    if(pending!=null) treasureResult=pending
+                } }
                 gameApi?.let { api -> runCatching { api.latestSharedBoneReward() }.onSuccess { shared ->
                     if(sharedRewardInitialized&&shared!=null&&shared.collectionId!=latestSharedRewardId){
                         status="Ni tog ${localizedBoneName(context,shared.boneType)} tillsammans · +${shared.boneValue} ben"
@@ -363,7 +366,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                 val walkable=OverpassClient.generateBones(point)
                                 check(walkable.isNotEmpty()){ "Inga gångbara spawnpunkter hittades" }
                                 gameApi.syncWalkableSpawnPoints(walkable)
-                                worldRepository.updatePresence(point,location.accuracy,location.bearing,location.speed.takeIf{location.hasSpeed()})
+                                worldRepository.refreshWorld(point)
                                 worldRepository.loadNearby(point)
                             }.onSuccess{snapshot->
                                 walkableDiscoveryDone=true
@@ -731,7 +734,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             poopRewardXp?.let{xp->
                 AlertDialog(onDismissRequest={},title={Text("TACK FÖR ATT DU HÅLLER RENT!",fontWeight=FontWeight.Black)},text={Text("Du plockade upp hundbajset och fick $xp XP.")},confirmButton={Button(onClick={poopRewardXp=null}){Text("OK")}})
             }
-            treasureResult?.let{result->AlertDialog(onDismissRequest={},title={Text("BRA JOBBAT!",fontWeight=FontWeight.Black,fontSize=26.sp,color=androidx.compose.ui.graphics.Color(0xFFFFC85B))},text={Column(Modifier.fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(10.dp)){Text("Skatten är hittad",fontSize=20.sp,fontWeight=FontWeight.Black);Text("BELÖNINGAR",fontSize=12.sp,color=androidx.compose.ui.graphics.Color(0xFFE2AA3D),fontWeight=FontWeight.Bold);Text("+${result.xpReward} XP",fontSize=22.sp,fontWeight=FontWeight.Black);result.frameName?.let{Text("Ny markörram: $it",textAlign=TextAlign.Center)}}},confirmButton={Button(onClick={treasureResult=null}){Text("TACK")}})}
+            treasureResult?.let{result->AlertDialog(onDismissRequest={},title={Text("BRA JOBBAT!",fontWeight=FontWeight.Black,fontSize=26.sp,color=androidx.compose.ui.graphics.Color(0xFFFFC85B))},text={Column(Modifier.fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(10.dp)){Text("Skatten är hittad",fontSize=20.sp,fontWeight=FontWeight.Black);Text("BELÖNINGAR",fontSize=12.sp,color=androidx.compose.ui.graphics.Color(0xFFE2AA3D),fontWeight=FontWeight.Bold);Text("+${result.xpReward} XP",fontSize=22.sp,fontWeight=FontWeight.Black);result.frameName?.let{Text("Ny markör: $it",textAlign=TextAlign.Center)}}},confirmButton={Button(onClick={result.huntId?.let{id->scope.launch{runCatching{gameApi?.acknowledgeTreasureReward(id)}}};treasureResult=null}){Text("TACK")}})}
             activeDogInfo?.let{dog->ActiveDogInfoDialog(dog){activeDogInfo=null}}
             pileToConfirm?.let{pile->
                 AlertDialog(onDismissRequest={if(!collecting)pileToConfirm=null},title={Text(stringResource(R.string.ui_text_027))},text={Column(verticalArrangement=Arrangement.spacedBy(7.dp),horizontalAlignment=Alignment.CenterHorizontally){DogBoneSlotMachine(pile.type,"JORDHÖG · ${pile.cost} BEN",false,Modifier.widthIn(max=260.dp),oddsLines=pileOddsLines(pile.cost));Text(stringResource(R.string.pile_confirm_body,pile.cost))}},confirmButton={Button(enabled=!collecting&&boneCount>=pile.cost,onClick={collecting=true;scope.launch{val p=player;if(worldRepository!=null&&p!=null)runCatching{worldRepository.openPile(pile.id,p,latestLocationAccuracy)}.fold(onSuccess={r->boneCount=r.balance.coerceAtMost(Int.MAX_VALUE.toLong()).toInt();currentProfile=currentProfile.copy(boneCount=r.balance,totalPiles=currentProfile.totalPiles+1,totalBones=currentProfile.totalBones+r.quantity);piles=piles.filterNot{it.id==pile.id};pendingPileReward=r;status=context.getString(R.string.pile_spinning)},onFailure={status=when{it.message?.contains("PILE_ALREADY_CLAIMED")==true->context.getString(R.string.pile_claimed_first);it.message?.contains("INSUFFICIENT_BONES")==true->context.getString(R.string.action_need_bones,pile.cost);it.message?.contains("PILE_OUT_OF_RANGE")==true->"Du är för långt från högen.";it.message?.contains("GPS_INACCURATE")==true||it.message?.contains("GPS_REQUIRED")==true->context.getString(R.string.bone_gps_inaccurate);else->"${context.getString(R.string.pile_open_failed)} ${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"}})else status=context.getString(R.string.bone_gps_inaccurate);collecting=false;selectedPile=null;pileToConfirm=null}}){Text(stringResource(R.string.pile_pay_button,pile.cost))}},dismissButton={TextButton(enabled=!collecting,onClick={pileToConfirm=null}){Text(stringResource(R.string.ui_text_006))}})

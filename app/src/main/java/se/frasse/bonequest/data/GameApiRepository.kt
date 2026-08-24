@@ -95,6 +95,7 @@ private inline fun <reified T> decodeRpcObject(raw:String):T {
     val checkpoints:List<TreasureCheckpoint> = emptyList()
 )
 @Serializable data class TreasureClaimResult(
+    @SerialName("hunt_id") val huntId:String?=null,
     val claimed:Boolean=true,val sequence:Int=0,val completed:Boolean=false,
     @SerialName("xp_reward") val xpReward:Int=0,
     @SerialName("frame_id") val frameId:String?=null,
@@ -194,6 +195,11 @@ class GameApiRepository(private val client:SupabaseClient) {
         }
         return decodeRpcObject(response.data)
     }
+    suspend fun pendingTreasureReward():TreasureClaimResult? =
+        client.postgrest.rpc("get_pending_treasure_reward").decodeList<TreasureClaimResult>().firstOrNull()
+    suspend fun acknowledgeTreasureReward(huntId:String) = client.postgrest.rpc(
+        "acknowledge_treasure_reward",buildJsonObject{put("p_hunt_id",huntId)}
+    )
     suspend fun abortTreasureHunt() = client.postgrest.rpc("abort_treasure_hunt")
     suspend fun rerollTreasureHunt() = client.postgrest.rpc("reroll_treasure_hunt")
     suspend fun huntTeam():HuntTeamState {
