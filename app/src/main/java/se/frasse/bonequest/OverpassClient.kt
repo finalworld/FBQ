@@ -9,23 +9,64 @@ import java.net.URLEncoder
 import kotlin.math.*
 
 object OverpassClient {
-    suspend fun generateBones(center: GeoPoint, radiusMeters: Int = 3500): List<Bone> = withContext(Dispatchers.IO) {
+    data class DiscoveredPoi(val osmType:String,val osmId:Long,val poiType:String,val name:String?,val latitude:Double,val longitude:Double,val address:String?,val openingHours:String?,val phone:String?,val website:String?)
+    suspend fun discoverDogPois(center:GeoPoint,radiusMeters:Int=10_000):List<DiscoveredPoi> = withContext(Dispatchers.IO) {
+        val query="""[out:json][timeout:25];(nwr(around:$radiusMeters,${center.latitude},${center.longitude})["leisure"="dog_park"];nwr(around:$radiusMeters,${center.latitude},${center.longitude})["shop"="pet"];nwr(around:$radiusMeters,${center.latitude},${center.longitude})["amenity"="veterinary"];nwr(around:$radiusMeters,${center.latitude},${center.longitude})["shop"="pet_grooming"];nwr(around:$radiusMeters,${center.latitude},${center.longitude})["amenity"="dog_wash"];);out center tags;"""
+        val connection=(URL("https://overpass-api.de/api/interpreter?data=${URLEncoder.encode(query,"UTF-8")}").openConnection() as HttpURLConnection).apply{connectTimeout=20_000;readTimeout=30_000;setRequestProperty("User-Agent","FrassesBoneQuest/0.400")}
+        if(connection.responseCode !in 200..299)return@withContext emptyList()
+        val elements=JSONObject(connection.inputStream.bufferedReader().use{it.readText()}).getJSONArray("elements")
+        buildList {
+            for(i in 0 until elements.length()) {
+                val e=elements.getJSONObject(i)
+                val tags=e.optJSONObject("tags") ?: continue
+                val centerJson=e.optJSONObject("center")
+                val lat=if(e.has("lat")) e.getDouble("lat") else centerJson?.optDouble("lat") ?: continue
+                val lon=if(e.has("lon")) e.getDouble("lon") else centerJson?.optDouble("lon") ?: continue
+                val type=when {
+                    tags.optString("leisure")=="dog_park" -> "dog_park"
+                    tags.optString("shop")=="pet" -> "pet_shop"
+                    tags.optString("amenity")=="veterinary" -> "veterinary"
+                    tags.optString("shop")=="pet_grooming" -> "grooming"
+                    else -> "dog_wash"
+                }
+                val value:(String)->String?={key->tags.optString(key).takeIf{it.isNotBlank()}}
+                val composedAddress=listOfNotNull(value("addr:street"),value("addr:housenumber")).joinToString(" ").ifBlank{null}
+                add(DiscoveredPoi(e.getString("type"),e.getLong("id"),type,value("name"),lat,lon,
+                    value("addr:full")?:composedAddress,value("opening_hours"),value("phone"),value("website")))
+            }
+        }
+    }
+    suspend fun generateBones(center: GeoPoint, radiusMeters: Int = 2000): List<Bone> = withContext(Dispatchers.IO) {
         val query = """
             [out:json][timeout:25];
             way(around:$radiusMeters,${center.latitude},${center.longitude})
-              ["highway"~"^(footway|path|pedestrian|track)$"]
+              ["highway"~"^(footway|path|pedestrian|track|residential|living_street|service|unclassified)$"]
               ["access"!="private"];
             out geom;
         """.trimIndent()
         val encoded = URLEncoder.encode(query, "UTF-8")
-        val connection = (URL("https://overpass-api.de/api/interpreter?data=$encoded").openConnection() as HttpURLConnection).apply {
-            connectTimeout = 20_000
-            readTimeout = 30_000
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "FrassesBoneQuest/0.200 (Android test build)")
+        val endpoints = listOf(
+            "https://overpass-api.de/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter",
+            "https://overpass.nchc.org.tw/api/interpreter"
+        )
+        var responseText:String?=null
+        var lastFailure:Throwable?=null
+        for(endpoint in endpoints){
+            val attempt=runCatching{
+                val connection=(URL("$endpoint?data=$encoded").openConnection() as HttpURLConnection).apply{
+                    connectTimeout=15_000
+                    readTimeout=30_000
+                    requestMethod="GET"
+                    setRequestProperty("User-Agent","FrassesBoneQuest/0.500 (Android)")
+                }
+                if(connection.responseCode !in 200..299)error("Overpass svarade ${connection.responseCode}")
+                connection.inputStream.bufferedReader().use{it.readText()}
+            }
+            if(attempt.isSuccess){responseText=attempt.getOrThrow();break}
+            lastFailure=attempt.exceptionOrNull()
         }
-        if (connection.responseCode !in 200..299) error("Overpass svarade ${connection.responseCode}")
-        val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+        val json = JSONObject(responseText ?: throw (lastFailure ?: IllegalStateException("Ingen Overpass-server svarade")))
 
         // Densify every usable walking way. This gives enough candidates to create
         // several breadcrumb trails instead of one lonely distant bone.
@@ -59,7 +100,7 @@ object OverpassClient {
             .distinctBy { "%.5f_%.5f".format(java.util.Locale.US, it.latitude, it.longitude) }
             .filter {
                 val d = distanceMeters(center.latitude, center.longitude, it.latitude, it.longitude)
-                d in 120.0..radiusMeters.toDouble()
+                d in 0.0..radiusMeters.toDouble()
             }
 
         val picked = mutableListOf<GeoPoint>()
@@ -71,21 +112,21 @@ object OverpassClient {
             var anchor = center
             var anchorRadius = 0.0
             repeat(4) { step ->
-                val minStep = if (step == 0) 140.0 else 230.0
-                val maxStep = if (step == 0) 270.0 else 380.0
+                val minStep = if (step == 0) 0.0 else 100.0
+                val maxStep = if (step == 0) 220.0 else 360.0
                 val choice = usable.asSequence()
                     .filter { candidate ->
                         val stepDistance = distanceMeters(anchor.latitude, anchor.longitude, candidate.latitude, candidate.longitude)
                         val radius = distanceMeters(center.latitude, center.longitude, candidate.latitude, candidate.longitude)
                         val angle = bearingDegrees(center, candidate)
                         stepDistance in minStep..maxStep &&
-                            radius >= anchorRadius + (if (step == 0) 0.0 else 120.0) &&
+                            radius >= anchorRadius + (if (step == 0) 0.0 else 70.0) &&
                             angleDifference(angle, targetAngle) <= 35.0 &&
                             picked.all { distanceMeters(it.latitude, it.longitude, candidate.latitude, candidate.longitude) >= 170.0 }
                     }
                     .minByOrNull { candidate ->
                         val stepDistance = distanceMeters(anchor.latitude, anchor.longitude, candidate.latitude, candidate.longitude)
-                        abs(stepDistance - if (step == 0) 210.0 else 300.0) + angleDifference(bearingDegrees(center, candidate), targetAngle) * 3.0
+                        abs(stepDistance - if (step == 0) 90.0 else 240.0) + angleDifference(bearingDegrees(center, candidate), targetAngle) * 3.0
                     }
                 if (choice != null) {
                     picked += choice
@@ -98,15 +139,15 @@ object OverpassClient {
         // Fill gaps so the player normally sees plenty of choices, while keeping
         // enough spacing that the map does not become one solid pile of icons.
         usable.shuffled().forEach { candidate ->
-            if (picked.size >= 30) return@forEach
-            if (picked.all { distanceMeters(it.latitude, it.longitude, candidate.latitude, candidate.longitude) >= 190.0 }) {
+            if (picked.size >= 100) return@forEach
+            if (picked.all { distanceMeters(it.latitude, it.longitude, candidate.latitude, candidate.longitude) >= 100.0 }) {
                 picked += candidate
             }
         }
 
-        picked.take(30).map { point ->
+        picked.take(100).map { point ->
             Bone(
-                id = "v0200_${"%.6f".format(java.util.Locale.US, point.latitude)}_${"%.6f".format(java.util.Locale.US, point.longitude)}",
+                id = "osm_walk_${"%.6f".format(java.util.Locale.US, point.latitude)}_${"%.6f".format(java.util.Locale.US, point.longitude)}",
                 latitude = point.latitude,
                 longitude = point.longitude
             )

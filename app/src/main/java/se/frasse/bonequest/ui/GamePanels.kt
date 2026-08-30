@@ -1,0 +1,634 @@
+package se.frasse.bonequest
+
+import androidx.compose.ui.res.stringResource
+
+import android.content.Intent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import se.frasse.bonequest.walking.WalkingPreferences
+import se.frasse.bonequest.walking.WalkingServiceController
+
+enum class GamePanel { PROFILE, COLLECTION, EQUIPMENT, DOGS, EVENT, EVENT_LOG, TREASURE_HUNT, FLOCKS, HOME, SETTINGS, ADMIN, SHOP }
+
+private val PanelDark=Color(0xFF151B1D)
+private val PanelGold=Color(0xFFE2AA3D)
+private val PanelCream=Color(0xFFFFE5B0)
+private val PanelTeal=Color(0xFF168D8A)
+
+@Composable fun GameMenu(
+    profile:SessionBootstrap,api:GameApiRepository,shopPoi:MapPoi?=null,
+    poiSettings:PoiSettings=PoiSettings(),onPoiSettings:(PoiSettings)->Unit={},
+    serverActionsEnabled:Boolean=true,onAdminMapMode:()->Unit={},onClose:()->Unit,
+    onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit,onQuit:()->Unit,
+    huntLocation:GeoPoint?=null,huntAccuracy:Float?=null
+) {
+    var panel by remember { mutableStateOf(GamePanel.PROFILE) }
+    Surface(Modifier.fillMaxSize(),color=Color(0xF7171B1D)) {
+        Row(Modifier.statusBarsPadding().navigationBarsPadding()) {
+            Column(Modifier.width(112.dp).fillMaxHeight().background(Color(0xFF111719)).padding(top=10.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                Row(Modifier.fillMaxWidth().clickable(onClick=onClose).padding(horizontal=10.dp,vertical=9.dp),verticalAlignment=Alignment.CenterVertically){
+                    Text("☰",color=PanelGold,fontWeight=FontWeight.Black,fontSize=26.sp)
+                    Text("Stäng",Modifier.padding(start=7.dp),color=PanelCream,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                }
+                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(vertical=8.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                MenuTile("🐾",stringResource(R.string.menu_profile)) { panel=GamePanel.PROFILE }
+                MenuTile("🦴",stringResource(R.string.menu_collection)) { panel=GamePanel.COLLECTION }
+                MenuTile("🎒",stringResource(R.string.menu_equipment)) { panel=GamePanel.EQUIPMENT }
+                MenuTile("🐶","Hundar") { panel=GamePanel.DOGS }
+                MenuTile("🧸","Frasses event") { panel=GamePanel.EVENT }
+                MenuTile("📜","Logg") { panel=GamePanel.EVENT_LOG }
+                MenuTile("🗺️","Skattjakt") { panel=GamePanel.TREASURE_HUNT }
+                MenuTile("🐕",stringResource(R.string.menu_flocks)) { panel=GamePanel.FLOCKS }
+                MenuTile("🏠",stringResource(R.string.menu_home)) { panel=GamePanel.HOME }
+                MenuTile(R.drawable.menu_settings_pixel,stringResource(R.string.menu_settings)) { panel=GamePanel.SETTINGS }
+                if(profile.isAdmin) MenuTile("★",stringResource(R.string.menu_admin)) { panel=GamePanel.ADMIN }
+                }
+                Column(Modifier.fillMaxWidth().clickable(onClick=onQuit).padding(vertical=12.dp),horizontalAlignment=Alignment.CenterHorizontally){
+                    Image(painterResource(R.drawable.menu_power_pixel),null,Modifier.size(42.dp),contentScale=ContentScale.Fit)
+                    Text("Stäng appen",color=PanelCream,fontSize=10.sp,textAlign=TextAlign.Center)
+                }
+            }
+            Column(Modifier.weight(1f).fillMaxHeight().padding(14.dp)) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text(stringResource(panelTitleResource(panel)),Modifier.weight(1f),color=PanelGold,fontSize=22.sp,fontWeight=FontWeight.Black)
+                    Text(stringResource(R.string.panel_bone_balance,profile.boneCount),color=PanelCream,fontWeight=FontWeight.Bold)
+                }
+                HorizontalDivider(color=PanelGold.copy(alpha=.6f));Spacer(Modifier.height(10.dp))
+                Box(Modifier.fillMaxSize()){
+                    if(!serverActionsEnabled&&panel in setOf(GamePanel.EQUIPMENT,GamePanel.EVENT,GamePanel.FLOCKS,GamePanel.HOME,GamePanel.ADMIN,GamePanel.SHOP)){
+                        Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text(stringResource(R.string.ui_text_048),color=Color(0xFFFF6B5D),fontSize=22.sp,fontWeight=FontWeight.Black);Text(stringResource(R.string.ui_text_014),color=PanelCream,textAlign=TextAlign.Center)}
+                    } else when(panel){
+                        GamePanel.PROFILE->ProfilePanel(profile,api,onProfile){panel=GamePanel.COLLECTION}
+                        GamePanel.COLLECTION->CollectionPanel(api)
+                        GamePanel.EQUIPMENT->EquipmentPanel(api,onProfile)
+                        GamePanel.DOGS->DogsPanel(profile,api,onBalance,onProfile)
+                        GamePanel.EVENT->FrasseEventPanel(api)
+                        GamePanel.EVENT_LOG->EventLogPanel(api)
+                        GamePanel.TREASURE_HUNT->TreasureHuntPanel(api,onBalance,huntLocation,huntAccuracy)
+                        GamePanel.FLOCKS->FlocksPanel(api,onBalance)
+                        GamePanel.HOME->HomePanel(profile,api,onBalance,onProfile)
+                        GamePanel.SETTINGS->SettingsPanel(profile,api,poiSettings,onPoiSettings,onProfile)
+                        GamePanel.SHOP->ShopPanel(profile,api,shopPoi,onBalance)
+                        GamePanel.ADMIN->AdminPanel(api){onAdminMapMode();onClose()}
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun MenuTile(icon:String,label:String,onClick:()->Unit) {
+    Column(Modifier.fillMaxWidth().clickable(onClick=onClick).padding(vertical=10.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+        Text(icon,fontSize=25.sp);Text(label,color=PanelCream,fontSize=11.sp,textAlign=TextAlign.Center)
+    }
+}
+
+@Composable private fun MenuTile(iconRes:Int,label:String,onClick:()->Unit) {
+    Column(Modifier.fillMaxWidth().clickable(onClick=onClick).padding(vertical=8.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+        Image(painterResource(iconRes),null,Modifier.size(34.dp),contentScale=ContentScale.Fit)
+        Text(label,color=PanelCream,fontSize=11.sp,textAlign=TextAlign.Center)
+    }
+}
+
+@Composable fun GamePanelScreen(
+    panel:GamePanel,profile:SessionBootstrap,api:GameApiRepository,shopPoi:MapPoi?=null,
+    poiSettings:PoiSettings=PoiSettings(),onPoiSettings:(PoiSettings)->Unit={},
+    serverActionsEnabled:Boolean=true,onAdminMapMode:()->Unit={},
+    onNavigate:(GamePanel)->Unit={},onClose:()->Unit,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit,
+    huntLocation:GeoPoint?=null,huntAccuracy:Float?=null
+) {
+    Surface(Modifier.fillMaxSize(),color=PanelDark) {
+        Column(Modifier.statusBarsPadding().navigationBarsPadding()) {
+            Row(Modifier.fillMaxWidth().height(58.dp).background(Color(0xFF101719)).padding(horizontal=14.dp),verticalAlignment=Alignment.CenterVertically) {
+                TextButton(onClick=onClose){Text(stringResource(R.string.ui_text_087))};Text(stringResource(panelTitleResource(panel)),Modifier.weight(1f),color=PanelGold,fontWeight=FontWeight.Black,fontSize=21.sp,textAlign=TextAlign.Center)
+                Text(stringResource(R.string.panel_bone_balance,profile.boneCount),color=PanelCream,fontWeight=FontWeight.Bold)
+            }
+            HorizontalDivider(color=PanelGold)
+            Box(Modifier.fillMaxSize().padding(14.dp)) {
+                if(!serverActionsEnabled&&panel in setOf(GamePanel.EQUIPMENT,GamePanel.EVENT,GamePanel.FLOCKS,GamePanel.HOME,GamePanel.ADMIN,GamePanel.SHOP)){
+                    Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text(stringResource(R.string.ui_text_048),color=Color(0xFFFF6B5D),fontSize=25.sp,fontWeight=FontWeight.Black);Text(stringResource(R.string.ui_text_014),color=PanelCream,textAlign=TextAlign.Center)}
+                    return@Box
+                }
+                when(panel) {
+                    GamePanel.PROFILE -> ProfilePanel(profile,api,onProfile){onNavigate(GamePanel.COLLECTION)}
+                    GamePanel.COLLECTION -> CollectionPanel(api)
+                    GamePanel.EQUIPMENT -> EquipmentPanel(api,onProfile)
+                    GamePanel.DOGS -> DogsPanel(profile,api,onBalance,onProfile)
+                    GamePanel.EVENT -> FrasseEventPanel(api)
+                    GamePanel.EVENT_LOG -> EventLogPanel(api)
+                    GamePanel.TREASURE_HUNT -> TreasureHuntPanel(api,onBalance,huntLocation,huntAccuracy)
+                    GamePanel.FLOCKS -> FlocksPanel(api,onBalance)
+                    GamePanel.HOME -> HomePanel(profile,api,onBalance,onProfile)
+                    GamePanel.SETTINGS -> SettingsPanel(profile,api,poiSettings,onPoiSettings,onProfile)
+                    GamePanel.SHOP -> ShopPanel(profile,api,shopPoi,onBalance)
+                    GamePanel.ADMIN -> AdminPanel(api,onAdminMapMode)
+                }
+            }
+        }
+    }
+}
+
+private fun panelTitleResource(p:GamePanel)=when(p){
+    GamePanel.PROFILE->R.string.panel_profile;GamePanel.COLLECTION->R.string.panel_collection;GamePanel.EQUIPMENT->R.string.panel_equipment
+    GamePanel.DOGS->R.string.panel_dogs;GamePanel.EVENT->R.string.panel_frasse_event;GamePanel.EVENT_LOG->R.string.panel_event_log;GamePanel.TREASURE_HUNT->R.string.panel_treasure_hunt
+    GamePanel.FLOCKS->R.string.panel_flocks;GamePanel.HOME->R.string.panel_home;GamePanel.SETTINGS->R.string.panel_settings
+    GamePanel.ADMIN->R.string.panel_admin;GamePanel.SHOP->R.string.panel_shop
+}
+
+private fun huntError(error:Throwable):String {
+    val raw=error.message.orEmpty()
+    return when {
+        "GPS_REQUIRED" in raw -> "Väntar på en aktuell GPS-position. Gå utomhus och försök igen om några sekunder."
+        "GPS_INACCURATE" in raw -> "GPS-signalen är inte tillräckligt exakt ännu. Försök igen om några sekunder."
+        "ACTIVE_HUNT_EXISTS" in raw -> "Du har redan en aktiv skattjakt."
+        "ALREADY_IN_TEAM" in raw -> "Du är redan med i ett jaktlag."
+        "PLAYER_IN_TEAM" in raw -> "Spelaren är redan med i ett annat aktivt jaktlag."
+        "PLAYER_NOT_NEARBY" in raw -> "Spelaren måste vara inom 200 meter och ha spelet öppet."
+        "INSUFFICIENT_BONES" in raw -> "Du har inte tillräckligt många ben."
+        "NOT_ENOUGH_WALKABLE_POINTS" in raw -> "Det gick inte att skapa en säker runda här. Flytta dig lite och försök igen."
+        else -> raw.ifBlank { "Något gick fel. Försök igen." }
+    }
+}
+
+@Composable private fun TreasureHuntPanel(api:GameApiRepository,onBalance:(Long)->Unit,huntLocation:GeoPoint?,huntAccuracy:Float?){
+    val scope=rememberCoroutineScope()
+    var state by remember{mutableStateOf<TreasureHuntState?>(null)}
+    var team by remember{mutableStateOf<HuntTeamState?>(null)}
+    var message by remember{mutableStateOf<String?>(null)}
+    var busy by remember{mutableStateOf(false)}
+    suspend fun refresh(){runCatching{api.treasureHunt()}.onSuccess{state=it}.onFailure{message=huntError(it)};runCatching{api.huntTeam()}.onSuccess{team=it}.onFailure{message=huntError(it)}}
+    fun reload(){scope.launch{refresh()}}
+    LaunchedEffect(Unit){while(true){refresh();delay(5000)}}
+    LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){
+        item{
+            Text("Välj en promenadlängd. Jakten skapar kontrollpunkter som får tas i valfri ordning.",color=PanelCream)
+            Text("Belöning: XP och en exklusiv markörram. Jakten ger inga ben.",color=PanelGold,fontSize=13.sp)
+        }
+        team?.invites?.forEach{invite->item{
+            Column(Modifier.fillMaxWidth().background(Color(0xFF293438),RoundedCornerShape(8.dp)).padding(10.dp)){
+                Text("${invite.leaderName} bjuder in dig till sitt jaktlag",color=PanelCream,fontWeight=FontWeight.Bold)
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onClick={scope.launch{runCatching{api.respondHuntTeamInvite(invite.id,true)}.onSuccess{refresh()}.onFailure{message=huntError(it)}}}){Text("GÅ MED")};OutlinedButton(onClick={scope.launch{runCatching{api.respondHuntTeamInvite(invite.id,false)}.onSuccess{refresh()}.onFailure{message=huntError(it)}}}){Text("NEKA")}}
+            }
+        }}
+        item{
+            Text("JAKTLAG",color=PanelGold,fontWeight=FontWeight.Black,fontSize=18.sp)
+            val t=team
+            if(t?.teamId==null) Button(enabled=!busy,onClick={scope.launch{busy=true;runCatching{api.createHuntTeam()}.onSuccess{message="Jaktlaget skapades";refresh()}.onFailure{message=huntError(it)};busy=false}},modifier=Modifier.fillMaxWidth()){Text("SKAPA JAKTLAG")}
+            else Column(verticalArrangement=Arrangement.spacedBy(5.dp)){
+                t.members.forEach{m->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(5.dp)).padding(8.dp),verticalAlignment=Alignment.CenterVertically){Text("${m.displayName} · Level ${m.level}${if(m.isLeader)"  👑" else ""}",Modifier.weight(1f),color=PanelCream);if(t.isLeader&&!m.isLeader)TextButton(onClick={scope.launch{runCatching{api.kickHuntTeamMember(m.playerId)}.onSuccess{refresh()}.onFailure{message=huntError(it)}}}){Text("SPARKA",color=Color(0xFFFF6B62))}}}
+                if(t.isLeader&&t.nearby.isNotEmpty()){Text("Spelare inom 200 meter",color=PanelGold,fontSize=13.sp);t.nearby.forEach{p->Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("${p.displayName} · ${p.distanceM} m",Modifier.weight(1f),color=PanelCream);TextButton(onClick={scope.launch{runCatching{api.inviteToHuntTeam(p.playerId)}.onSuccess{message="Inbjudan skickad"}.onFailure{message=huntError(it)}}}){Text("BJUD IN")}}}}
+                OutlinedButton(onClick={scope.launch{runCatching{api.leaveHuntTeam()}.onSuccess{message="Du lämnade jaktlaget";refresh()}.onFailure{message=huntError(it)}}},modifier=Modifier.fillMaxWidth()){Text(if(t.isLeader)"UPPLÖS JAKTLAG" else "LÄMNA JAKTLAG")}
+            }
+        }
+        val active=state?.takeIf{it.active}
+        if(active==null){
+            items((1..10).toList()){km->
+                val cost=25+25*km
+                Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(8.dp)).padding(10.dp),verticalAlignment=Alignment.CenterVertically){
+                    Column(Modifier.weight(1f)){Text("$km km",color=PanelCream,fontWeight=FontWeight.Black);Text("$cost ben · ${25*km} XP",color=PanelGold,fontSize=12.sp)}
+                    Button(enabled=!busy,onClick={
+                        val location=huntLocation;val accuracy=huntAccuracy
+                        if(location==null||accuracy==null){message="Väntar på GPS-position. Försök igen om några sekunder."}
+                        else {busy=true;scope.launch{runCatching{api.startTreasureHunt(km,location.latitude,location.longitude,accuracy);api.boneBalance()}.onSuccess{onBalance(it);message="Skattjakten har startat!";reload()}.onFailure{message=huntError(it)}.also{busy=false}}}
+                    }){Text("STARTA")}
+                }
+            }
+        }else{
+            item{
+                Text("Aktiv jakt · ${active.lengthKm} km",color=PanelGold,fontSize=20.sp,fontWeight=FontWeight.Black)
+                Text("Ledtrådar ${active.checkpoints.count{it.claimed}}/${active.checkpoints.size} · ${active.xpReward} XP",color=PanelCream)
+            }
+            items(active.checkpoints){checkpoint->
+                Text("● Ledtråd ${checkpoint.sequence}  ${if(checkpoint.claimed)"✓ tagen" else "kvar"}",color=if(checkpoint.claimed)Color(0xFF59C879) else PanelCream,modifier=Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(6.dp)).padding(10.dp))
+            }
+            item{
+                if(active.checkpoints.none{it.claimed}) Button(enabled=!busy,onClick={scope.launch{busy=true;runCatching{api.rerollTreasureHunt()}.onSuccess{message="Jakten rullades om gratis";refresh()}.onFailure{message=it.message};busy=false}},modifier=Modifier.fillMaxWidth()){Text("ROLLA OM GRATIS")}
+                OutlinedButton(onClick={scope.launch{runCatching{api.abortTreasureHunt()}.onSuccess{message="Jakten avbröts";reload()}.onFailure{message=it.message}}},modifier=Modifier.fillMaxWidth()){Text("AVBRYT JAKT")}
+            }
+        }
+        message?.let{item{Text(it,color=PanelGold)}}
+    }
+}
+
+@Composable private fun ProfilePanel(profile:SessionBootstrap,api:GameApiRepository,onProfile:(SessionBootstrap)->Unit,onCollection:()->Unit) {
+    val scope=rememberCoroutineScope();var edit by remember{mutableStateOf(false)};var name by remember{mutableStateOf(profile.displayName)};var message by remember{mutableStateOf<String?>(null)}
+    var markerName by remember(profile.activeMarkerId){mutableStateOf(humanizeMarkerId(profile.activeMarkerId))}
+    LaunchedEffect(profile.activeMarkerId){markerName=runCatching{api.catalog().firstOrNull{it.itemId==profile.activeMarkerId}?.nameSv}.getOrNull()?:humanizeMarkerId(profile.activeMarkerId)}
+    LazyColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        item { StatCard("Steg på den här telefonen",profile.deviceSteps.toString()) }
+        item { StatCard(stringResource(R.string.profile_game_name),profile.displayName);StatCard("Level",profile.level.toString());XpNextLevelCard(profile);StatCard("XP totalt",profile.xpTotal.toInt().toString());StatCard("XP från ben",profile.xpFromBones.toInt().toString());StatCard("XP från promenader",profile.xpFromWalking.toInt().toString());StatCard("XP från jordhögar",profile.xpFromPiles.toInt().toString());StatCard(stringResource(R.string.profile_member_label),profile.createdAt.take(10));StatCard(stringResource(R.string.profile_balance_label),profile.boneCount.toString());StatCard(stringResource(R.string.profile_walked_label),stringResource(R.string.profile_km_value,profile.totalMeters/1000.0));StatCard(stringResource(R.string.profile_bones_found_label),profile.totalBones.toString());StatCard(stringResource(R.string.profile_piles_label),profile.totalPiles.toString());StatCard(stringResource(R.string.profile_active_marker_label),markerName) }
+        item { Button(onClick={edit=!edit},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_082))} }
+        item { OutlinedButton(onClick=onCollection,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_084))} }
+        if(edit) item { OutlinedTextField(name,{name=it.take(20)},Modifier.fillMaxWidth(),singleLine=true);Button(enabled=GameNameRules.isValidPlayerName(name),onClick={scope.launch{runCatching{api.changeName(name);api.bootstrap()}.onSuccess{onProfile(it);edit=false}.onFailure{message=it.message}}}){Text(stringResource(R.string.ui_text_062))}}
+        message?.let { item { Text(it,color=PanelGold) } }
+    }
+}
+
+private fun humanizeMarkerId(id:String)=when(id){
+    "marker_default_paw"->"Standardtass";"marker_frasse_mythic"->"Frasse"
+    else->id.removePrefix("marker_").replace('_',' ').replaceFirstChar{if(it.isLowerCase())it.titlecase() else it.toString()}
+}
+
+@Composable private fun StatCard(label:String,value:String) { Row(Modifier.fillMaxWidth().padding(vertical=7.dp)){Text(label,Modifier.weight(1f),color=PanelCream.copy(alpha=.7f));Text(value,color=PanelCream,fontWeight=FontWeight.Bold)} }
+
+private val dogBreeds=listOf("Labrador retriever","Goldendoodle","Tysk schäfer","Fransk bulldogg","Beagle","Rottweiler","Pudel (stor)","Siberian husky","Border collie","Tax (korthårig)")
+private val dogPerks=listOf("Dubbelnos","Vandringsglädje","Bensamlare","Grävmästare","Lång nos","Spårsinne","Flitig grävare","Butikskompis","Tursvans","Sällskapshund")
+private fun dogDrawable(context:android.content.Context,breed:Int,stage:Int)=context.resources.getIdentifier("dog_${breed.coerceIn(0,9).toString().padStart(2,'0')}_stage_${(stage.coerceIn(0,5)-1).coerceAtLeast(0)}","drawable",context.packageName)
+
+@Composable private fun DogsPanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit){
+    val context=LocalContext.current;val scope=rememberCoroutineScope();var dogs by remember{mutableStateOf<List<DogProfile>>(emptyList())};var message by remember{mutableStateOf<String?>(null)};var rename by remember{mutableStateOf<DogProfile?>(null)};var newName by remember{mutableStateOf("")};var kennel by remember{mutableStateOf<DogProfile?>(null)}
+    fun reload(){scope.launch{dogs=runCatching{api.dogs()}.getOrDefault(emptyList())}}
+    LaunchedEffect(Unit){reload()}
+    if(dogs.isEmpty())Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text("Lyckliga Svansars Hundstall",color=PanelGold,fontWeight=FontWeight.Black,fontSize=20.sp);Spacer(Modifier.height(8.dp));Text("Du har ingen hund ännu. Valpar kan hittas i jordhögar.",color=PanelCream,textAlign=TextAlign.Center)} else LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){
+        item{Text("Lyckliga Svansars Hundstall",color=PanelGold,fontWeight=FontWeight.Black,fontSize=18.sp);message?.let{Text(it,color=PanelCream)}}
+        items(dogs,key={it.id}){dog->
+            Card(colors=CardDefaults.cardColors(containerColor=Color(0xFF20282A))){Column(Modifier.fillMaxWidth().padding(10.dp)){
+                Row(verticalAlignment=Alignment.CenterVertically){Image(painterResource(dogDrawable(context,dog.breed,dog.stage)),null,Modifier.size(78.dp),contentScale=ContentScale.Crop);Column(Modifier.weight(1f).padding(start=10.dp)){Text("${dog.name} ${if(dog.gender=="female")"♀" else "♂"}",color=PanelCream,fontWeight=FontWeight.Black);Text(dogBreeds.getOrElse(dog.breed){"Hund"},color=PanelGold);Text(if(dog.isPuppy)"Valp · år ${dog.stage}" else "Vuxen hund",color=PanelCream,fontSize=11.sp);Text("${"%.2f".format(dog.distanceMeters/1000.0)} / ${dog.developmentKm} km",color=PanelCream,fontSize=11.sp)}}
+                val fraction=(dog.distanceMeters/(dog.developmentKm*1000f)).coerceIn(0f,1f);LinearProgressIndicator(progress={fraction},Modifier.fillMaxWidth().height(7.dp),color=Color(0xFFFFC928),trackColor=Color(0xFF111719))
+                if(dog.stage>=5)listOfNotNull(dog.perkPrimary?.let{it to (dog.perkPrimaryLevel?:1)},dog.perkSecondary?.let{it to (dog.perkSecondaryLevel?:1)}).forEach{(id,level)->val perk=dogPerkInfo(id,level);Column(Modifier.fillMaxWidth().padding(top=5.dp)){Text("${perk.name} · nivå $level",color=PanelGold,fontSize=11.sp,fontWeight=FontWeight.Black);Text(perk.description,color=PanelCream,fontSize=10.sp);Text("Aktuell bonus: ${perk.bonus}",color=PanelCream,fontSize=10.sp,fontWeight=FontWeight.Bold)}} else Text("Möjliga perks: ${dog.visiblePerks.mapNotNull{dogPerks.getOrNull(it)}.joinToString()}",color=PanelCream,fontSize=10.sp)
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){if(!dog.isActive)Button(onClick={scope.launch{runCatching{api.setActiveDog(dog.id)}.onSuccess{reload()}.onFailure{message=it.message}}},modifier=Modifier.weight(1f)){Text("VÄLJ")};if(dog.isActive)OutlinedButton(onClick={rename=dog;newName=dog.name},modifier=Modifier.weight(1f)){Text("DÖP OM")};OutlinedButton(onClick={kennel=dog},modifier=Modifier.weight(1f)){Text("HUNDSTALL")}}
+            }}
+        }
+    }
+    rename?.let{dog->AlertDialog(onDismissRequest={rename=null},title={Text("Döp om ${dog.name}")},text={Column{Text("Kostar 100 ben. Namnet kan ändras igen efter ett dygn.");OutlinedTextField(newName,{newName=it.take(20)},singleLine=true)}},confirmButton={Button(enabled=newName.isNotBlank()&&profile.boneCount>=100,onClick={scope.launch{runCatching{api.renameActiveDog(newName)}.onSuccess{onBalance(profile.boneCount-100);reload();rename=null}.onFailure{message=it.message}}}){Text("SPARA")}},dismissButton={TextButton(onClick={rename=null}){Text("AVBRYT")}})}
+    kennel?.let{dog->AlertDialog(onDismissRequest={kennel=null},title={Text("Skicka till hundstallet?")},text={Text("${dog.name} lämnar din samling permanent hos Lyckliga Svansars Hundstall. Bekräfta en gång till för att fortsätta.")},confirmButton={Button(onClick={scope.launch{runCatching{api.sendDogToKennel(dog.id)}.onSuccess{reload();kennel=null}.onFailure{message=it.message}}}){Text("JA, SKICKA")}},dismissButton={TextButton(onClick={kennel=null}){Text("BEHÅLL")}})}
+}
+
+@Composable private fun XpNextLevelCard(profile:SessionBootstrap){
+    val value=if(profile.level>=100)"MAX" else "${profile.xpCurrentLevel.toInt()}/${profile.xpNextLevel.toInt()} · ${(profile.xpNextLevel-profile.xpCurrentLevel).coerceAtLeast(0.0).toInt()} XP kvar"
+    Column(Modifier.fillMaxWidth().padding(vertical=7.dp)){Text("XP till nästa level",color=PanelCream.copy(alpha=.7f),maxLines=1);Text(value,color=PanelCream,fontWeight=FontWeight.Bold,maxLines=1)}
+}
+
+@Composable private fun EventLogPanel(api:GameApiRepository){
+    var category by remember{mutableStateOf<String?>(null)};var events by remember{mutableStateOf<List<PlayerEvent>>(emptyList())};var selected by remember{mutableStateOf<PlayerEvent?>(null)}
+    LaunchedEffect(category){events=runCatching{api.eventLog(category)}.getOrDefault(emptyList())}
+    val visibleEvents=remember(events){mergePileEvents(events)}
+    Column{LazyRow(horizontalArrangement=Arrangement.spacedBy(5.dp)){items(listOf(null to "Alla","bone" to "Ben","xp" to "XP","purchase" to "Köp","pile" to "Högar","walking" to "Promenad","other" to "Övrigt")){(key,label)->FilterChip(category==key,{category=key},label={Text(label)})}};Spacer(Modifier.height(7.dp));if(visibleEvents.isEmpty())Text("Loggen är tom.",color=PanelCream) else LazyColumn(verticalArrangement=Arrangement.spacedBy(5.dp)){items(visibleEvents,key={it.id}){e->Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(5.dp)).clickable{selected=e}.padding(9.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(shortTimestamp(e.createdAt),color=PanelCream.copy(alpha=.7f),fontSize=10.sp);Text(e.title,color=PanelCream,fontWeight=FontWeight.Bold)};Text(buildString{if(e.boneDelta!=0L)append("${if(e.boneDelta>0)"+" else ""}${e.boneDelta} ben ");if(e.xpDelta!=0.0)append("${if(e.xpDelta>0)"+" else ""}${e.xpDelta.toInt()} XP")},color=PanelGold,fontWeight=FontWeight.Bold)}}}}
+    selected?.let{e->AlertDialog(onDismissRequest={selected=null},title={Text(e.title)},text={Text("${shortTimestamp(e.createdAt)}\nBen: ${e.boneDelta}\nXP: ${e.xpDelta.toInt()}\nTransaktion: ${e.id}\n${e.details}")},confirmButton={TextButton(onClick={selected=null}){Text("OK")}})}
+}
+
+private fun mergePileEvents(events:List<PlayerEvent>):List<PlayerEvent>{
+    val result=mutableListOf<PlayerEvent>()
+    val used=mutableSetOf<Int>()
+    events.forEachIndexed { index, first ->
+        if(index in used)return@forEachIndexed
+        if(first.category!="pile"){result+=first;return@forEachIndexed}
+        val firstTime=runCatching{java.time.Instant.parse(first.createdAt)}.getOrNull()
+        val match=((index+1) until minOf(events.size,index+7)).firstOrNull { candidateIndex ->
+            val candidate=events[candidateIndex]
+            val candidateTime=runCatching{java.time.Instant.parse(candidate.createdAt)}.getOrNull()
+            candidateIndex !in used&&candidate.category=="pile"&&firstTime!=null&&candidateTime!=null&&
+                kotlin.math.abs(java.time.Duration.between(firstTime,candidateTime).seconds)<=45&&
+                ((first.boneDelta<0&&candidate.boneDelta>=0)||(candidate.boneDelta<0&&first.boneDelta>=0))
+        }
+        if(match==null)result+=first else {
+            used+=match
+            val pair=listOf(first,events[match])
+            val cost=kotlin.math.abs(pair.filter{it.boneDelta<0}.sumOf{it.boneDelta})
+            val win=pair.filter{it.boneDelta>0}.sumOf{it.boneDelta}
+            result+=first.copy(title="Jordhög · kostade $cost ben · vann $win ben",boneDelta=win-cost,xpDelta=pair.sumOf{it.xpDelta})
+        }
+    }
+    return result
+}
+
+@Composable private fun CollectionPanel(api:GameApiRepository) {
+    var rows by remember{mutableStateOf<List<BoneCollectionRow>>(emptyList())};var loading by remember{mutableStateOf(true)}
+    val context=LocalContext.current
+    LaunchedEffect(Unit){runCatching{api.collection()}.onSuccess{rows=it};loading=false}
+    if(loading) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator(color=PanelGold)} else LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        items((0..11).toList()){type->
+            val count=rows.firstOrNull{it.boneType==type}?.lifetimeCount?:0
+            Row(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(5.dp)).padding(10.dp),verticalAlignment=Alignment.CenterVertically){
+                val normalized=remember(type){normalizedDrawableBitmap(context,boneDrawable(type),128,88,108,58,true)}
+                Image(normalized.asImageBitmap(),null,Modifier.size(62.dp),contentScale=ContentScale.Fit,colorFilter=if(count>0)null else ColorFilter.tint(Color(0xFF5D6263)))
+                Column(Modifier.weight(1f).padding(start=10.dp)){Text(if(count>0) localizedBoneName(context,type) else stringResource(R.string.collection_unknown_bone),color=PanelCream,fontWeight=FontWeight.Bold);Text(stringResource(R.string.collection_value,BONE_VALUES[type]),color=PanelGold)}
+                Text(if(count>0) count.toString() else "?",fontSize=22.sp,color=PanelCream,fontWeight=FontWeight.Black)
+            }
+        }
+    }
+}
+private fun boneDrawable(type:Int)=intArrayOf(R.drawable.bone_01,R.drawable.bone_02,R.drawable.bone_03,R.drawable.bone_04,R.drawable.bone_05,R.drawable.bone_06,R.drawable.bone_07,R.drawable.bone_08,R.drawable.bone_09,R.drawable.bone_10,R.drawable.bone_11,R.drawable.bone_12)[type.coerceIn(0,11)]
+
+@Composable private fun EquipmentPanel(api:GameApiRepository,onProfile:(SessionBootstrap)->Unit) {
+    val scope=rememberCoroutineScope();var items by remember{mutableStateOf<List<ShopItem>>(emptyList())};var busy by remember{mutableStateOf(false)};var message by remember{mutableStateOf<String?>(null)}
+    fun reload(){scope.launch{items=runCatching{api.catalog()}.getOrDefault(emptyList()).filter{it.owned}}}
+    LaunchedEffect(Unit){reload()}
+    val context=LocalContext.current
+    Column{message?.let{Text(it,color=Color(0xFFFF6B5D),modifier=Modifier.padding(bottom=6.dp))};LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){items(items){item->Box(Modifier.fillMaxWidth().background(if(item.equipped)Color(0xFF594824) else Color(0xFF20282A),RoundedCornerShape(7.dp)).border(1.dp,if(item.equipped)PanelGold else Color.Transparent,RoundedCornerShape(7.dp)).clickable(enabled=!busy&&!item.equipped){busy=true;message=null;scope.launch{runCatching{api.equip(item.itemId);api.bootstrap()}.onSuccess{onProfile(it);reload()}.onFailure{message="Kunde inte välja markören. Försök igen."};busy=false}}){Row(Modifier.fillMaxWidth().padding(13.dp),verticalAlignment=Alignment.CenterVertically){Image(markerBitmap(context,item.assetName).asImageBitmap(),null,Modifier.size(46.dp));Text(item.nameSv,Modifier.weight(1f).padding(start=10.dp),color=PanelCream,fontWeight=FontWeight.Bold)};if(item.equipped)Box(Modifier.align(Alignment.TopEnd).padding(6.dp).size(22.dp).background(PanelGold,CircleShape),contentAlignment=Alignment.Center){Text("✓",color=Color(0xFF171B1D),fontWeight=FontWeight.Black)}}}}}
+}
+
+@Composable private fun HomePanel(profile:SessionBootstrap,api:GameApiRepository,onBalance:(Long)->Unit,onProfile:(SessionBootstrap)->Unit){
+    val context=LocalContext.current;val scope=rememberCoroutineScope();var message by remember{mutableStateOf(context.getString(R.string.home_slot_intro))};var pending by remember{mutableStateOf<SlotResult?>(null)};var spinning by remember{mutableStateOf(false)};var error by remember{mutableStateOf(false)}
+    var reelBone by remember{mutableIntStateOf(0)};var lastWasLoss by remember{mutableStateOf(false)}
+    LaunchedEffect(pending?.spinId){
+        val result=pending?:return@LaunchedEffect
+        spinning=true
+        repeat(21){step->reelBone=(reelBone+1)%12;delay(60L+step*16L)}
+        lastWasLoss=result.payout==0
+        message=if(result.payout==0)context.getString(R.string.slot_loss) else context.getString(R.string.slot_win,result.payout,result.multiplier.toString())
+        onBalance(result.balance)
+        spinning=false
+    }
+    Column(verticalArrangement=Arrangement.spacedBy(13.dp)){
+        Text(stringResource(if(profile.homeLat==null)R.string.home_not_set else R.string.home_saved_map),color=PanelCream,fontSize=18.sp)
+        Button(enabled=pending==null,onClick={scope.launch{runCatching{api.setHome()}.onSuccess{message=context.getString(R.string.home_saved_cooldown);onProfile(api.bootstrap())}.onFailure{message=context.getString(R.string.home_move_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_068))}
+        HorizontalDivider();Text(stringResource(R.string.ui_text_020),color=PanelGold,fontWeight=FontWeight.Black,fontSize=20.sp);Text(message,color=if(error)Color(0xFFFF6B5D) else PanelCream)
+        DogBoneSlotMachine(
+            boneType=if(lastWasLoss&&!spinning&&pending!=null)-1 else reelBone,
+            information="Insats",
+            spinning=spinning,
+            stakes=listOf(1,2,5,10),
+            onStake={stake->scope.launch{error=false;lastWasLoss=false;runCatching{api.spinHome(stake)}.onSuccess{pending=it;message=context.getString(R.string.slot_spinning)}.onFailure{error=true;message=context.getString(R.string.slot_unavailable)}}}
+        )
+        if(spinning)LinearProgressIndicator(Modifier.fillMaxWidth(),color=PanelGold)
+        else if(pending!=null)Button(onClick={pending=null;lastWasLoss=false;message=context.getString(R.string.home_slot_intro)},modifier=Modifier.fillMaxWidth()){Text("OK",fontWeight=FontWeight.Black)}
+    }
+}
+
+@Composable internal fun DogBoneSlotMachine(
+    boneType:Int,information:String,spinning:Boolean,modifier:Modifier=Modifier,
+    stakes:List<Int> = emptyList(),onStake:(Int)->Unit={},oddsLines:List<String>?=null
+){
+    val context=LocalContext.current
+    val odds=oddsLines?:listOf("INGEN · 55%","1× · 25%","2× · 15%","5× · 4%","10× · 0,9%","50× · 0,1%")
+    val wood=Color(0xFF4B2818);val darkWood=Color(0xFF24140E);val trim=Color(0xFFE2A737);val reel=Color(0xFFFFEAC0)
+    Column(modifier.fillMaxWidth().background(darkWood,RoundedCornerShape(12.dp)).border(3.dp,trim,RoundedCornerShape(12.dp)).padding(8.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
+        Box(Modifier.fillMaxWidth().height(44.dp).background(wood,RoundedCornerShape(7.dp)).border(2.dp,trim,RoundedCornerShape(7.dp)),contentAlignment=Alignment.Center){
+            Text("FRASSES VINSTAUTOMAT",color=PanelCream,fontWeight=FontWeight.Black,fontSize=17.sp)
+        }
+        Row(Modifier.fillMaxWidth().height(178.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+            Box(Modifier.weight(1.55f).fillMaxHeight().background(reel,RoundedCornerShape(9.dp)).border(4.dp,Color(0xFF7A431E),RoundedCornerShape(9.dp)),contentAlignment=Alignment.Center){
+                if(boneType>=0){
+                    val reelBitmap=remember(boneType){normalizedDrawableBitmap(context,boneDrawable(boneType),180,112,150,78,true)}
+                    Image(reelBitmap.asImageBitmap(),null,Modifier.fillMaxWidth(.82f).height(92.dp),contentScale=ContentScale.Fit)
+                }else if(!spinning)Text("NITLOTT",color=Color(0xFF8A2B26),fontSize=21.sp,fontWeight=FontWeight.Black)
+                if(spinning)Text("RULLAR…",Modifier.align(Alignment.BottomCenter).padding(8.dp),color=Color(0xFF7A431E),fontSize=10.sp,fontWeight=FontWeight.Black)
+            }
+            Column(Modifier.weight(.85f).fillMaxHeight().background(wood,RoundedCornerShape(7.dp)).border(2.dp,trim,RoundedCornerShape(7.dp)).padding(horizontal=5.dp,vertical=4.dp),verticalArrangement=Arrangement.SpaceEvenly){
+                Text("VINSTER",Modifier.fillMaxWidth(),color=PanelGold,fontSize=10.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center)
+                odds.forEach{line->Text(line,Modifier.fillMaxWidth(),color=PanelCream,fontSize=8.sp,fontWeight=FontWeight.Bold,maxLines=1,textAlign=TextAlign.Center)}
+            }
+        }
+        Row(Modifier.fillMaxWidth().height(62.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+            stakes.take(4).forEachIndexed{index,stake->
+                val buttonColor=listOf(Color(0xFF344E25),Color(0xFF176DA5),Color(0xFF694092),Color(0xFFC65813))[index]
+                Box(Modifier.weight(1f).fillMaxHeight().background(buttonColor,RoundedCornerShape(8.dp)).border(2.dp,trim,RoundedCornerShape(8.dp)).clickable(enabled=!spinning){onStake(stake)},contentAlignment=Alignment.Center){
+                    Text(stake.toString(),color=Color.White,fontSize=24.sp,fontWeight=FontWeight.Black,style=LocalTextStyle.current.copy(shadow=Shadow(Color.Black,Offset(2f,2f),1f)),textAlign=TextAlign.Center)
+                }
+            }
+        }
+        Text(if(spinning)"RULLAR…" else information,Modifier.fillMaxWidth(),color=PanelCream,fontSize=10.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1)
+    }
+}
+
+@Composable private fun ShopPanel(profile:SessionBootstrap,api:GameApiRepository,poi:MapPoi?,onBalance:(Long)->Unit) {
+    val eventShop="__frasse_event_shop__"
+    val context=LocalContext.current;val scope=rememberCoroutineScope();var catalog by remember{mutableStateOf<List<ShopItem>>(emptyList())};var category by remember{mutableStateOf<String?>(null)};var message by remember{mutableStateOf<String?>(null)};var pendingPurchase by remember{mutableStateOf<ShopItem?>(null)}
+    fun reload(){scope.launch{catalog=runCatching{api.catalog()}.getOrDefault(emptyList());if(category==null)category=catalog.firstOrNull()?.subcategory}}
+    LaunchedEffect(Unit){reload()}
+    Row(Modifier.fillMaxSize()){
+        LazyColumn(Modifier.width(112.dp).fillMaxHeight().background(Color(0xFF111719))){item{Text("EVENT",Modifier.padding(horizontal=9.dp,vertical=10.dp),color=PanelGold,fontWeight=FontWeight.Black,fontSize=11.sp);Text("🧸 Eventbutik",Modifier.fillMaxWidth().clickable{category=eventShop}.background(if(category==eventShop)Color(0xFF3B321D) else Color.Transparent).padding(horizontal=10.dp,vertical=10.dp),color=if(category==eventShop)PanelGold else PanelCream,fontSize=11.sp,fontWeight=FontWeight.Bold)};catalog.groupBy{it.mainCategory}.forEach{(main,entries)->item{Text(main.uppercase(),Modifier.padding(horizontal=9.dp,vertical=10.dp),color=PanelGold,fontWeight=FontWeight.Black,fontSize=11.sp)};items(entries.map{it.subcategory}.distinct()){cat->Text(cat,Modifier.fillMaxWidth().clickable{category=cat}.padding(horizontal=10.dp,vertical=8.dp),color=if(category==cat)PanelGold else PanelCream,fontSize=11.sp)}}}
+        Column(Modifier.weight(1f).padding(start=10.dp)){if(category==eventShop){FrasseEventPanel(api)}else{message?.let{Text(it,color=PanelGold)};LazyVerticalGrid(columns=GridCells.Fixed(1),modifier=Modifier.fillMaxSize(),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){gridItems(catalog.filter{it.subcategory==category}){item->Column(Modifier.fillMaxWidth().background(if(item.owned)Color.DarkGray else Color(0xFF20282A),RoundedCornerShape(5.dp)).padding(9.dp),horizontalAlignment=Alignment.CenterHorizontally){Image(markerBitmap(context,item.assetName).asImageBitmap(),null,Modifier.size(58.dp));Text(item.nameSv,color=PanelCream,fontWeight=FontWeight.Bold,textAlign=TextAlign.Center,fontSize=12.sp);Text(stringResource(R.string.shop_item_price,item.rarity,item.price),color=if(item.price>profile.boneCount)Color(0xFFFF6961) else PanelGold,textAlign=TextAlign.Center,fontSize=11.sp);Button(enabled=!item.owned&&item.price<=profile.boneCount&&poi!=null,onClick={pendingPurchase=item}){Text(stringResource(if(item.owned)R.string.shop_owned else R.string.shop_buy))}}}}}}
+    }
+    pendingPurchase?.let{item->AlertDialog(onDismissRequest={pendingPurchase=null},title={Text(stringResource(R.string.shop_confirm_title,item.nameSv))},text={Text(stringResource(R.string.shop_confirm_body,item.price))},confirmButton={Button(onClick={pendingPurchase=null;scope.launch{runCatching{api.buy(poi!!.poiId,item.itemId)}.onSuccess{onBalance(it.balance);message=context.getString(R.string.shop_purchase_success,item.nameSv);reload()}.onFailure{message=when{it.message?.contains("SHOP_OUT_OF_RANGE")==true->context.getString(R.string.shop_purchase_failed);it.message?.contains("ACCURATE_LOCATION_REQUIRED")==true->context.getString(R.string.bone_gps_inaccurate);it.message?.contains("INSUFFICIENT_BONES")==true->context.getString(R.string.action_need_bones,item.price.toInt());else->"Köpet misslyckades: ${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"}}}}){Text(stringResource(R.string.ui_text_035))}},dismissButton={TextButton(onClick={pendingPurchase=null}){Text(stringResource(R.string.ui_text_006))}})}
+}
+
+@Composable private fun SettingsPanel(profile:SessionBootstrap,api:GameApiRepository,initialPoiSettings:PoiSettings,onPoiSettings:(PoiSettings)->Unit,onProfile:(SessionBootstrap)->Unit) {
+    val context=LocalContext.current;val scope=rememberCoroutineScope();var walking by remember{mutableStateOf(profile.walkingModeEnabled)};var bark by remember{mutableStateOf(profile.barkEnabled)};var vibration by remember{mutableStateOf(profile.vibrationEnabled)};var poiSettings by remember(initialPoiSettings){mutableStateOf(initialPoiSettings)};var saved by remember{mutableStateOf<String?>(null)};var deleting by remember{mutableStateOf(false)};var confirmation by remember{mutableStateOf("")};var gameSettingsReady by remember{mutableStateOf(false)};var poiSettingsReady by remember{mutableStateOf(false)}
+    LaunchedEffect(walking,bark,vibration){
+        if(!gameSettingsReady){gameSettingsReady=true;return@LaunchedEffect}
+        delay(150)
+        WalkingPreferences(context).apply{setEnabled(walking);setBarkEnabled(bark);setVibrationEnabled(vibration)}
+        onProfile(profile.copy(walkingModeEnabled=walking,barkEnabled=bark,vibrationEnabled=vibration))
+        runCatching{if(walking)WalkingServiceController.start(context) else WalkingServiceController.stop(context)}
+        runCatching{api.updateSettings(walking,bark,vibration);api.bootstrap()}
+            .onSuccess{onProfile(it);saved=context.getString(R.string.settings_saved)}
+            .onFailure{saved=context.getString(R.string.settings_save_failed)}
+    }
+    LaunchedEffect(poiSettings){
+        if(!poiSettingsReady){poiSettingsReady=true;return@LaunchedEffect}
+        delay(150)
+        onPoiSettings(poiSettings)
+        runCatching{api.updatePoiSettings(poiSettings)}
+            .onSuccess{saved=context.getString(R.string.settings_saved)}
+            .onFailure{saved=context.getString(R.string.settings_save_failed)}
+    }
+    Column(verticalArrangement=Arrangement.spacedBy(13.dp)){
+        SettingToggle(stringResource(R.string.settings_walking_title),stringResource(R.string.settings_walking_help),walking){walking=it}
+        SettingToggle(stringResource(R.string.settings_bark_title),stringResource(R.string.settings_bark_help),bark){bark=it}
+        SettingToggle(stringResource(R.string.settings_vibration_title),stringResource(R.string.settings_vibration_help),vibration){vibration=it}
+        HorizontalDivider(color=PanelGold.copy(alpha=.35f));Text(stringResource(R.string.ui_text_034),color=PanelGold,fontWeight=FontWeight.Black)
+        SettingToggle(stringResource(R.string.settings_dog_parks),stringResource(R.string.settings_dog_parks_help),poiSettings.showDogParks){poiSettings=poiSettings.copy(showDogParks=it)}
+        SettingToggle(stringResource(R.string.settings_pet_shops),stringResource(R.string.settings_pet_shops_help),poiSettings.showPetShops){poiSettings=poiSettings.copy(showPetShops=it)}
+        SettingToggle(stringResource(R.string.settings_vets),stringResource(R.string.settings_vets_help),poiSettings.showVets){poiSettings=poiSettings.copy(showVets=it)}
+        SettingToggle(stringResource(R.string.settings_services),stringResource(R.string.settings_services_help),poiSettings.showGrooming){poiSettings=poiSettings.copy(showGrooming=it)}
+        saved?.let{Text(it,color=PanelGold)};Spacer(Modifier.weight(1f));OutlinedButton(onClick={scope.launch{api.signOut()}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_036))};TextButton(onClick={deleting=true},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_058),color=Color(0xFFFF6B5D))}
+    }
+    if(deleting) AlertDialog(onDismissRequest={deleting=false},title={Text(stringResource(R.string.ui_text_059))},text={Column{Text(stringResource(R.string.ui_text_022));OutlinedTextField(confirmation,{confirmation=it},Modifier.fillMaxWidth())}},confirmButton={Button(enabled=confirmation==profile.displayName,onClick={scope.launch{runCatching{api.deleteAccount(confirmation)}.onSuccess{api.signOut()}.onFailure{saved=context.getString(R.string.account_delete_failed)};deleting=false}}){Text(stringResource(R.string.ui_text_057))}},dismissButton={TextButton(onClick={deleting=false}){Text(stringResource(R.string.ui_text_006))}})
+}
+@Composable private fun SettingToggle(title:String,help:String,value:Boolean,onChange:(Boolean)->Unit){Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(title,color=PanelCream,fontWeight=FontWeight.Bold);Text(help,color=PanelCream.copy(alpha=.65f),fontSize=12.sp)};Switch(value,onChange)}}
+
+@Composable private fun FlocksPanel(api:GameApiRepository,onBalance:(Long)->Unit) {
+    val scope=rememberCoroutineScope()
+    val context=LocalContext.current
+    var mine by remember{mutableStateOf<List<MyFlock>>(emptyList())}
+    var publicFlocks by remember{mutableStateOf<List<FlockSummary>>(emptyList())}
+    var selected by remember{mutableStateOf<MyFlock?>(null)}
+    var members by remember{mutableStateOf<List<FlockMember>>(emptyList())}
+    var applications by remember{mutableStateOf<List<FlockApplication>>(emptyList())}
+    var ledger by remember{mutableStateOf<List<FlockLedgerEntry>>(emptyList())}
+    var contributions by remember{mutableStateOf<List<FlockContribution>>(emptyList())}
+    var tab by remember{mutableIntStateOf(0)}
+    var detailTab by remember{mutableIntStateOf(0)}
+    var name by remember{mutableStateOf("")}
+    var message by remember{mutableStateOf<String?>(null)}
+    var confirmDelete by remember{mutableStateOf(false)}
+    var statsMember by remember{mutableStateOf<FlockMember?>(null)}
+    var statsRows by remember{mutableStateOf<List<BoneCollectionRow>>(emptyList())}
+
+    suspend fun reloadLists(){mine=api.myFlocks();publicFlocks=api.listFlocks()}
+    suspend fun reloadDetail(f:MyFlock){
+        members=api.members(f.flockId)
+        ledger=api.ledger(f.flockId)
+        contributions=runCatching{api.contributionLeaderboard(f.flockId)}.getOrElse{
+            ledger.filter{it.amount>0}.groupBy{it.actorName}.map{(actor,entries)->FlockContribution("",actor,entries.sumOf{it.amount}.toLong())}.sortedWith(compareByDescending<FlockContribution>{it.totalContributed}.thenBy{it.displayName.lowercase()})
+        }
+        applications=if(f.myRole in listOf("leader","guard")) runCatching{api.applications(f.flockId)}.getOrDefault(emptyList()) else emptyList()
+        selected=api.myFlocks().firstOrNull{it.flockId==f.flockId}?:f
+    }
+    LaunchedEffect(Unit){runCatching{reloadLists()}.onFailure{message=context.getString(R.string.flock_load_failed)}}
+
+    val flock=selected
+    if(flock!=null){
+        Column {
+            Column(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(7.dp)).padding(10.dp)){Row(verticalAlignment=Alignment.CenterVertically){TextButton(onClick={selected=null}){Text(stringResource(R.string.ui_text_086),maxLines=1)};Text(flock.name,Modifier.weight(1f),color=PanelGold,fontSize=21.sp,fontWeight=FontWeight.Black)};Text("${localizedRoleName(flock.myRole,context)} · ${flock.memberCount} medlemmar",color=PanelCream,fontSize=12.sp);Text("Flockbank · ${flock.bankBalance} ben",color=PanelTeal,fontWeight=FontWeight.Bold,fontSize=12.sp)}
+            LazyRow(Modifier.fillMaxWidth().padding(vertical=7.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){items(listOf(R.string.flock_tab_members,R.string.flock_tab_applications,R.string.flock_tab_bank,R.string.flock_tab_manage).withIndex().toList()){entry->FilterChip(detailTab==entry.index,{detailTab=entry.index},label={Text(stringResource(entry.value),maxLines=1,fontSize=10.sp)})}}
+            message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(8.dp))}
+            if(detailTab==0&&members.isNotEmpty()){
+                Text(stringResource(R.string.flock_member_stats_help),color=PanelCream.copy(alpha=.75f),fontSize=11.sp)
+                LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){items(members){member->
+                    AssistChip(onClick={scope.launch{runCatching{api.flockMemberCollection(flock.flockId,member.playerId)}.onSuccess{statsRows=it;statsMember=member}.onFailure{message=context.getString(R.string.flock_member_stats_failed)}}},label={Text(member.displayName)})
+                }}
+            }
+            when(detailTab){
+                0->LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){items(members){m->Column(Modifier.fillMaxWidth().background(Color(0xFF20282A),RoundedCornerShape(7.dp)).padding(11.dp)){Row(verticalAlignment=Alignment.CenterVertically){Text(m.displayName,Modifier.weight(1f),color=PanelCream,fontWeight=FontWeight.Black,fontSize=16.sp);Text("LEVEL ${m.level}",color=PanelTeal,fontSize=11.sp,fontWeight=FontWeight.Black)};Text(localizedRoleName(m.role,context),color=PanelGold,fontWeight=FontWeight.Bold,fontSize=11.sp);Text("${"%.1f".format(m.totalMeters/1000.0)} km · ${m.boneBalance} ben · ${m.totalBones} hittade · ${m.totalPiles} högar",color=PanelCream.copy(alpha=.78f),fontSize=10.sp);if(flock.myRole=="leader"&&m.role!="leader")Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp)){OutlinedButton(onClick={scope.launch{runCatching{api.setGuard(flock.flockId,m.playerId,m.role!="guard")}.onSuccess{reloadDetail(flock)}}},modifier=Modifier.weight(1f)){Text(stringResource(if(m.role=="guard")R.string.flock_make_member else R.string.flock_make_guard),fontSize=9.sp,maxLines=1)};OutlinedButton(onClick={scope.launch{runCatching{api.transfer(flock.flockId,m.playerId)}.onSuccess{reloadLists();selected=null}}},modifier=Modifier.weight(1f)){Text(stringResource(R.string.ui_text_029),fontSize=9.sp,maxLines=1)}};if((flock.myRole=="leader"&&m.role!="leader")||(flock.myRole=="guard"&&m.role=="member"))OutlinedButton(onClick={scope.launch{runCatching{api.kick(flock.flockId,m.playerId)}.onSuccess{reloadDetail(flock)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_063),color=Color(0xFFFF6B5D),fontWeight=FontWeight.Black)}}}}
+                1->if(flock.myRole !in listOf("leader","guard"))Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(stringResource(R.string.ui_text_018),color=PanelCream)}else LazyColumn{items(applications){a->Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically){Text(a.displayName,Modifier.weight(1f),color=PanelCream);TextButton(onClick={scope.launch{runCatching{api.decideApplication(flock.flockId,a.playerId,true)}.onSuccess{reloadDetail(flock)}}}){Text(stringResource(R.string.ui_text_026))};TextButton(onClick={scope.launch{runCatching{api.decideApplication(flock.flockId,a.playerId,false)}.onSuccess{reloadDetail(flock)}}}){Text(stringResource(R.string.ui_text_043))}}}}
+                2->{
+                    LazyColumn{item{Text(stringResource(R.string.ui_text_021).format(flock.bankBalance),color=PanelGold,fontSize=20.sp,fontWeight=FontWeight.Bold);Text("Medlemmarnas sammanlagda bidrag",color=PanelCream,fontSize=12.sp)};items(contributions){entry->val position=contributions.indexOf(entry)+1;Row(Modifier.fillMaxWidth().padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically){Text("$position.",Modifier.width(30.dp),color=PanelGold,fontWeight=FontWeight.Black);Text(entry.displayName,Modifier.weight(1f),color=PanelCream,fontWeight=FontWeight.Bold);Text("${entry.totalContributed} ben",color=PanelTeal,fontWeight=FontWeight.Black)}}}
+                }
+                else->Column(verticalArrangement=Arrangement.spacedBy(9.dp)){if(flock.myRole=="leader"){Text(stringResource(R.string.ui_text_013),color=PanelCream);OutlinedTextField(name,{name=it.take(24)},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_047))});Button(onClick={scope.launch{runCatching{api.renameFlock(flock.flockId,name)}.onSuccess{message=context.getString(R.string.flock_renamed);reloadLists();reloadDetail(flock)}.onFailure{message=context.getString(R.string.flock_rename_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_011))};Text(stringResource(R.string.ui_text_085),color=PanelCream,fontSize=12.sp);if(flock.memberCount==1L)TextButton(onClick={confirmDelete=true}){Text(stringResource(R.string.ui_text_073),color=Color(0xFFFF6B5D))}}else Button(onClick={scope.launch{runCatching{api.leave(flock.flockId)}.onSuccess{selected=null;reloadLists()}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_039))}}
+            }
+        }
+        if(confirmDelete)AlertDialog(onDismissRequest={confirmDelete=false},title={Text(stringResource(R.string.flock_delete_title,flock.name))},text={Text(stringResource(R.string.ui_text_017))},confirmButton={Button(onClick={scope.launch{runCatching{api.deleteFlock(flock.flockId,flock.name)}.onSuccess{selected=null;reloadLists()};confirmDelete=false}}){Text(stringResource(R.string.ui_text_070))}},dismissButton={TextButton(onClick={confirmDelete=false}){Text(stringResource(R.string.ui_text_006))}})
+        statsMember?.let{member->AlertDialog(onDismissRequest={statsMember=null},title={Text(member.displayName)},text={LazyColumn(Modifier.heightIn(max=430.dp)){items((0..11).toList()){type->val count=statsRows.firstOrNull{it.boneType==type}?.lifetimeCount?:0;Row(Modifier.fillMaxWidth().padding(vertical=5.dp),verticalAlignment=Alignment.CenterVertically){Image(painterResource(boneDrawable(type)),null,Modifier.size(36.dp),colorFilter=if(count>0)null else ColorFilter.tint(Color(0xFF5D6263)));Text(if(count>0)localizedBoneName(context,type) else stringResource(R.string.collection_unknown_bone),Modifier.weight(1f).padding(start=8.dp),color=PanelCream);Text(count.toString(),color=PanelGold,fontWeight=FontWeight.Bold)}}}},confirmButton={TextButton(onClick={statsMember=null}){Text(stringResource(R.string.ui_text_064))}})}
+        return
+    }
+
+    Column {
+        LazyRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){items(listOf(R.string.flock_tab_mine,R.string.flock_tab_all,R.string.flock_tab_create).withIndex().toList()){entry->FilterChip(tab==entry.index,{tab=entry.index},label={Text(stringResource(entry.value),maxLines=1)})}}
+        message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(8.dp))}
+        when(tab){
+            0->LazyColumn{items(mine){f->Row(Modifier.fillMaxWidth().clickable{scope.launch{reloadDetail(f)}}.padding(12.dp)){Text(flockIconGlyph(f.iconId),fontSize=25.sp);Column(Modifier.padding(start=9.dp)){Text(f.name,color=PanelCream,fontWeight=FontWeight.Bold);Text(stringResource(R.string.flock_list_summary,localizedRoleName(f.myRole,context),f.memberCount,f.bankBalance),color=PanelGold,fontSize=11.sp)}}}}
+            1->LazyColumn{items(publicFlocks){f->Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically){Text("${flockIconGlyph(f.iconId)} ${f.name}",Modifier.weight(1f),color=PanelCream);Text(f.memberCount.toString(),color=PanelGold);TextButton(enabled=mine.none{it.flockId==f.flockId}&&mine.size<3,onClick={scope.launch{runCatching{api.applyToFlock(f.flockId)}.onSuccess{message=context.getString(R.string.flock_application_sent)}.onFailure{message=context.getString(R.string.flock_application_failed)}}}){Text(stringResource(R.string.ui_text_028))}}}}
+            else->Column(Modifier.padding(top=14.dp),verticalArrangement=Arrangement.spacedBy(9.dp)){Text(stringResource(R.string.ui_text_016),color=PanelCream);OutlinedTextField(name,{name=it.take(24)},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_078))});Button(onClick={scope.launch{runCatching{api.createFlock(name)}.onSuccess{message=context.getString(R.string.flock_created);reloadLists();tab=0}.onFailure{message=context.getString(R.string.flock_create_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_061))}}
+        }
+    }
+}
+
+private fun localizedRoleName(role:String,context:android.content.Context)=context.getString(when(role){"leader"->R.string.flock_role_leader;"guard"->R.string.flock_role_guard;else->R.string.flock_role_member})
+private fun flockIconGlyph(iconId:String)=when(iconId){"flock_paw_shield"->"🛡️";else->"🐾"}
+private fun shortTimestamp(value:String)=runCatching{java.time.Instant.parse(value).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}.getOrDefault(value.take(16))
+
+@Composable private fun FrasseEventPanel(api:GameApiRepository){
+    val scope=rememberCoroutineScope();val context=LocalContext.current
+    var state by remember{mutableStateOf(FrasseEventState())};var busy by remember{mutableStateOf(false)};var loading by remember{mutableStateOf(true)};var message by remember{mutableStateOf<String?>(null)}
+    fun reload(){scope.launch{loading=true;runCatching{api.frasseEvent()}.onSuccess{state=it;message=null}.onFailure{message="Eventet kunde inte laddas: ${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"};loading=false}}
+    LaunchedEffect(Unit){reload()}
+    if(loading){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator(color=PanelGold)}}
+    else if(!state.active){Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text(if(message==null)"Frasse är hemma just nu" else "EVENTFEL",color=if(message==null)PanelGold else Color(0xFFFF6B5D),fontSize=22.sp,fontWeight=FontWeight.Black);Text(message?:"Ett event kan startas från adminpanelen.",color=PanelCream,textAlign=TextAlign.Center);if(message!=null)Button(onClick={reload()},modifier=Modifier.padding(top=12.dp)){Text("FÖRSÖK IGEN")}}}
+    else LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){
+        item{Text("🧸 ${state.toyBalance} LEKSAKER",color=PanelGold,fontSize=19.sp,fontWeight=FontWeight.Black,maxLines=1);Text("Glow till din vanliga markör · 100 leksaker",color=PanelCream,fontSize=12.sp);state.endsAt?.let{Text("Slutar ${shortTimestamp(it)}",color=PanelCream.copy(alpha=.7f),fontSize=11.sp)};message?.let{Text(it,color=Color(0xFFFF8A70),fontSize=11.sp)}}
+        items(state.glows){glow->
+            val name=when(glow.colorId){"gold"->"Guld";"red"->"Röd";"pink"->"Rosa";"purple"->"Lila";"blue"->"Blå";"cyan"->"Turkos";"green"->"Grön";"lime"->"Lime";"orange"->"Orange";else->"Vit"}
+            Column(Modifier.fillMaxWidth().background(if(glow.equipped==true)Color(0xFF4A3A18) else Color(0xFF20282A),RoundedCornerShape(8.dp)).padding(9.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
+                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Image(markerBitmapWithGlow(context,"marker_paw_standard",glow.colorId).asImageBitmap(),null,Modifier.size(54.dp));Column(Modifier.weight(1f).padding(start=8.dp)){Text("$name glow",color=PanelCream,fontWeight=FontWeight.Bold,fontSize=14.sp,maxLines=1);Text(if(glow.owned)"Ägd" else "100 leksaker",color=PanelGold,fontSize=11.sp,maxLines=1)}}
+                Button(enabled=!busy&&glow.equipped!=true&&((glow.owned)||state.toyBalance>=100),onClick={busy=true;scope.launch{
+                    runCatching{if(glow.owned){api.equipEventGlow(glow.colorId);null}else api.buyEventGlow(glow.colorId)}.onSuccess{reload();message=if(glow.owned)"$name glow är vald." else "$name glow köpt och vald!"}.onFailure{message=if(it.message?.contains("NOT_ENOUGH_TOYS")==true)"Du behöver 100 leksaker." else "Kunde inte välja glow."};busy=false
+                }},modifier=Modifier.fillMaxWidth().heightIn(min=40.dp)){Text(if(glow.equipped==true)"VALD" else if(glow.owned)"VÄLJ" else "KÖP",maxLines=1)}
+            }
+        }
+        item{OutlinedButton(enabled=!busy&&state.equippedGlow!=null,onClick={scope.launch{busy=true;runCatching{api.equipEventGlow("none")}.onSuccess{reload();message="Glow avstängd."};busy=false}},modifier=Modifier.fillMaxWidth()){Text("INGEN GLOW")}}
+    }
+}
+
+@Composable private fun AdminPanel(api:GameApiRepository,onMapMode:()->Unit){
+    val scope=rememberCoroutineScope();val context=LocalContext.current;var tab by remember{mutableIntStateOf(0)}
+    var search by remember{mutableStateOf("")};var players by remember{mutableStateOf<List<AdminPlayer>>(emptyList())};var selected by remember{mutableStateOf<AdminPlayer?>(null)}
+    var amount by remember{mutableStateOf("")};var boneMode by remember{mutableStateOf("add")};var xpAmount by remember{mutableStateOf("")};var xpMode by remember{mutableStateOf("add")};var forcedName by remember{mutableStateOf("")};var itemId by remember{mutableStateOf("")};var reason by remember{mutableStateOf("")}
+    var playerReason by remember{mutableStateOf("Manuell adminändring")}
+    var lat by remember{mutableStateOf("")};var lon by remember{mutableStateOf("")};var variant by remember{mutableStateOf("0")};var type by remember{mutableStateOf("bone")}
+    var objectId by remember{mutableStateOf("")};var poiName by remember{mutableStateOf("")};var poiType by remember{mutableStateOf("dog_park")};var poiShop by remember{mutableStateOf(false)}
+    var addressSearch by remember{mutableStateOf("")}
+    var adminFlockId by remember{mutableStateOf("")};var adminFlockName by remember{mutableStateOf("")}
+    var confirmObjectPlacement by remember{mutableStateOf(false)}
+    var message by remember{mutableStateOf<String?>(null)};var audits by remember{mutableStateOf<List<AdminAudit>>(emptyList())}
+    var adminEvent by remember{mutableStateOf(FrasseEventState())};var eventBusy by remember{mutableStateOf(false)}
+    fun find(){scope.launch{runCatching{api.adminPlayers(search)}.onSuccess{players=it;selected=null;message=if(it.isEmpty())"Inga spelare hittades" else null}.onFailure{message="Spelarsökning misslyckades: ${it.message.orEmpty()}"}}}
+    LaunchedEffect(Unit){adminEvent=runCatching{api.adminFrasseEvent()}.getOrDefault(FrasseEventState())}
+    Column{
+        Text(stringResource(R.string.ui_text_004),color=Color(0xFFFF6B5D),fontWeight=FontWeight.Black)
+        Surface(Modifier.fillMaxWidth().padding(vertical=5.dp),color=if(adminEvent.active)Color(0xFF173C32) else Color(0xFF2B3032),shape=RoundedCornerShape(8.dp)){
+            Column(Modifier.padding(10.dp)){Text("VECKOEVENT · FRASSE HAR RYMT",color=PanelGold,fontWeight=FontWeight.Black);Text(if(adminEvent.active)"AKTIVT till ${adminEvent.endsAt?.let(::shortTimestamp).orEmpty()}" else "Inte aktivt",color=PanelCream);Button(enabled=!eventBusy,onClick={eventBusy=true;scope.launch{runCatching{api.adminSetFrasseEvent(!adminEvent.active)}.onSuccess{adminEvent=it;message=if(it.active)"Eventet är startat i 7 dagar." else "Eventet är stoppat."}.onFailure{message="Kunde inte ändra eventet: ${it.message.orEmpty()}"};eventBusy=false}},modifier=Modifier.fillMaxWidth()){Text(if(adminEvent.active)"STOPPA EVENT" else "STARTA I 7 DAGAR")}}
+        }
+        Button(onClick=onMapMode,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_083))}
+        TabRow(tab){listOf(R.string.admin_tab_players,R.string.admin_tab_objects,R.string.admin_tab_places,R.string.admin_tab_flocks,R.string.admin_tab_log).forEachIndexed{i,t->Tab(tab==i,{tab=i;if(i==4)scope.launch{audits=runCatching{api.audit()}.getOrDefault(emptyList())}},text={Text(stringResource(t),fontSize=9.sp)})}}
+        message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(7.dp))}
+        if(tab==1&&objectId.isNotBlank()){
+            OutlinedButton(
+                enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&variant.toIntOrNull()!=null&&reason.length>=3,
+                onClick={confirmObjectPlacement=true},modifier=Modifier.fillMaxWidth()
+            ){Text(stringResource(R.string.admin_preview_update))}
+        }
+        when(tab){
+            0->{
+                Row{OutlinedTextField(search,{search=it},Modifier.weight(1f),label={Text(stringResource(R.string.ui_text_045))});Button(onClick={find()},modifier=Modifier.padding(start=5.dp)){Text(stringResource(R.string.ui_text_069))}}
+                val p=selected
+                if(p==null) LazyColumn{items(players){row->Row(Modifier.fillMaxWidth().clickable{selected=row}.padding(10.dp)){Text(row.displayName,Modifier.weight(1f),color=PanelCream);Text(row.boneCount.toString(),color=PanelGold)}}}
+                else LazyColumn(verticalArrangement=Arrangement.spacedBy(5.dp)){item{
+                    Text(p.displayName,color=PanelGold,fontSize=20.sp);Text(stringResource(R.string.admin_player_summary,p.boneCount,stringResource(if(p.isSuspended)R.string.admin_status_suspended else R.string.admin_status_active)),color=PanelCream);Text("Level ${p.level} · ${p.xpTotal.toInt()} XP",color=PanelCream)
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)){listOf("add" to "GE BEN","subtract" to "TA BEN","set" to "SÄTT SALDO").forEach{(key,label)->FilterChip(boneMode==key,{boneMode=key},label={Text(label,fontSize=8.sp,maxLines=1)},modifier=Modifier.weight(1f))}}
+                    OutlinedTextField(amount,{amount=it.filter{char->char.isDigit()}},Modifier.fillMaxWidth(),label={Text("ANTAL BEN")},supportingText={Text(when(boneMode){"add"->"Lägg till ben på spelarens saldo";"subtract"->"Dra av ben utan att saldot kan bli negativt";else->"Ersätt spelarens nuvarande saldo"})},singleLine=true)
+                    OutlinedTextField(forcedName,{forcedName=it.take(20)},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_046))})
+                    OutlinedTextField(itemId,{itemId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_024))})
+                    OutlinedTextField(playerReason,{playerReason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.admin_action_reason))},singleLine=true)
+                    val requestedBones=amount.toLongOrNull();val boneDelta=requestedBones?.let{when(boneMode){"add"->it;"subtract"->-it;else->it-p.boneCount}}
+                    Button(enabled=playerReason.trim().length>=3&&requestedBones!=null&&requestedBones>=0&&boneDelta!=null&&boneDelta!=0L&&p.boneCount+boneDelta>=0,onClick={scope.launch{runCatching{api.adminAdjustBones(p.playerId,boneDelta!!,playerReason.trim())}.onSuccess{newBalance->message="Bensaldot sparades: $newBalance ben";selected=p.copy(boneCount=newBalance);players=players.map{if(it.playerId==p.playerId)it.copy(boneCount=newBalance)else it};amount=""}.onFailure{message="Kunde inte ändra ben: ${it.message.orEmpty()}"}}},modifier=Modifier.fillMaxWidth()){Text("SPARA BENSALDO")}
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)){listOf("add" to "GE XP","subtract" to "TA XP","set" to "SÄTT XP").forEach{(key,label)->FilterChip(xpMode==key,{xpMode=key},label={Text(label,fontSize=8.sp,maxLines=1)},modifier=Modifier.weight(1f))}}
+                    OutlinedTextField(xpAmount,{xpAmount=it.filter{c->c.isDigit()||c=='.'}},Modifier.fillMaxWidth(),label={Text("XP")},singleLine=true)
+                    Button(enabled=playerReason.trim().length>=3&&xpAmount.toDoubleOrNull()!=null,onClick={scope.launch{runCatching{api.adminAdjustXp(p.playerId,xpMode,xpAmount.toDouble(),playerReason.trim())}.onSuccess{r->message="XP sparades: ${r.xpTotal.toInt()} XP · level ${r.level}";selected=p.copy(xpTotal=r.xpTotal,level=r.level);players=players.map{if(it.playerId==p.playerId)it.copy(xpTotal=r.xpTotal,level=r.level)else it};xpAmount=""}.onFailure{message="Kunde inte ändra XP: ${it.message.orEmpty()}"}}},modifier=Modifier.fillMaxWidth()){Text("SPARA XP")}
+                    Button(enabled=playerReason.length>=3,onClick={scope.launch{runCatching{if(p.isSuspended)api.adminUnsuspend(p.playerId,playerReason) else api.adminSuspend(p.playerId,playerReason)}.onSuccess{message=context.getString(R.string.admin_status_changed);players=api.adminPlayers(search);selected=players.firstOrNull{it.playerId==p.playerId}}.onFailure{message="Adminåtgärden misslyckades: ${it.message.orEmpty()}"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(if(p.isSuspended)R.string.admin_activate else R.string.admin_suspend))}
+                    Button(enabled=playerReason.length>=3&&GameNameRules.isValidPlayerName(forcedName),onClick={scope.launch{runCatching{api.adminForceName(p.playerId,forcedName,playerReason)}.onSuccess{message=context.getString(R.string.admin_name_changed);players=api.adminPlayers(search);selected=players.firstOrNull{it.playerId==p.playerId}}.onFailure{message="Kunde inte ändra namn: ${it.message.orEmpty()}"}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_011))}
+                    Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){Button(enabled=playerReason.length>=3&&itemId.isNotBlank(),onClick={scope.launch{runCatching{api.adminSetItem(p.playerId,itemId,true,playerReason)}.onSuccess{message=context.getString(R.string.admin_item_granted)}.onFailure{message="Kunde inte ge föremålet: ${it.message.orEmpty()}"}}}){Text(stringResource(R.string.ui_text_025))};Button(enabled=playerReason.length>=3&&itemId.isNotBlank(),onClick={scope.launch{runCatching{api.adminSetItem(p.playerId,itemId,false,playerReason)}.onSuccess{message=context.getString(R.string.admin_item_removed)}.onFailure{message="Kunde inte ta bort föremålet: ${it.message.orEmpty()}"}}}){Text(stringResource(R.string.ui_text_074))}}
+                    TextButton(onClick={selected=null}){Text(stringResource(R.string.ui_text_076))}
+                }}
+            }
+            1->Column(verticalArrangement=Arrangement.spacedBy(7.dp)){Text(stringResource(R.string.ui_text_056),color=PanelCream);Row{listOf("bone","pile").forEach{x->FilterChip(type==x,{type=x},label={Text(stringResource(if(x=="bone")R.string.admin_bone else R.string.admin_pile))},modifier=Modifier.padding(end=5.dp))}};Row{OutlinedTextField(addressSearch,{addressSearch=it},Modifier.weight(1f),label={Text(stringResource(R.string.ui_text_008))});Button(enabled=addressSearch.isNotBlank(),onClick={scope.launch{val found=withContext(Dispatchers.IO){runCatching{android.location.Geocoder(context).getFromLocationName(addressSearch,1)?.firstOrNull()}.getOrNull()};if(found==null)message=context.getString(R.string.admin_place_not_found) else{lat="%.6f".format(java.util.Locale.US,found.latitude);lon="%.6f".format(java.util.Locale.US,found.longitude);message=context.getString(R.string.admin_place_found)}}}){Text(stringResource(R.string.ui_text_069))}};OutlinedTextField(objectId,{objectId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_050))});OutlinedTextField(lat,{lat=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_037))});OutlinedTextField(lon,{lon=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_038))});OutlinedTextField(variant,{variant=it},Modifier.fillMaxWidth(),label={Text(stringResource(if(type=="bone")R.string.admin_bone_type_range else R.string.admin_pile_type_range))});OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_051))});Button(enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&variant.toIntOrNull()!=null&&reason.length>=3,onClick={confirmObjectPlacement=true},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_053))};OutlinedButton(enabled=objectId.isNotBlank()&&reason.length>=3,onClick={scope.launch{runCatching{api.adminDeleteWorldObject(objectId,type,reason)}.onSuccess{message=context.getString(R.string.admin_object_removed)}.onFailure{message=context.getString(R.string.admin_object_remove_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_071))}}
+            2->LazyColumn(verticalArrangement=Arrangement.spacedBy(7.dp)){item{Text(stringResource(R.string.ui_text_067),color=PanelCream);OutlinedTextField(objectId,{objectId=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_054))});OutlinedTextField(poiName,{poiName=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_044))});Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())){listOf("dog_park","pet_shop","veterinary","grooming","dog_wash").forEach{x->FilterChip(poiType==x,{poiType=x},label={Text(stringResource(poiTypeNameResource(x)))},modifier=Modifier.padding(end=4.dp))}};OutlinedTextField(lat,{lat=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_037))});OutlinedTextField(lon,{lon=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_038))});SettingToggle(stringResource(R.string.admin_game_shop),stringResource(R.string.admin_game_shop_help),poiShop){poiShop=it};OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_051))});Button(enabled=lat.toDoubleOrNull()!=null&&lon.toDoubleOrNull()!=null&&reason.length>=3,onClick={scope.launch{runCatching{api.adminUpsertPoi(objectId.ifBlank{null},poiType,poiName,lat.toDouble(),lon.toDouble(),poiShop,reason)}.onSuccess{message=context.getString(R.string.admin_place_saved)}.onFailure{message=context.getString(R.string.admin_place_save_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(if(objectId.isBlank())R.string.admin_create_place else R.string.admin_update_place))};OutlinedButton(enabled=objectId.isNotBlank()&&reason.length>=3,onClick={scope.launch{runCatching{api.adminDeletePoi(objectId,reason)}.onSuccess{message=context.getString(R.string.admin_place_removed)}.onFailure{message=context.getString(R.string.admin_place_remove_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_072))}}}
+            3->Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text(stringResource(R.string.admin_flock_help),color=PanelCream);OutlinedTextField(adminFlockId,{adminFlockId=it.trim()},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.admin_flock_id))});OutlinedTextField(adminFlockName,{adminFlockName=it.take(24)},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.admin_new_flock_name))});OutlinedTextField(reason,{reason=it},Modifier.fillMaxWidth(),label={Text(stringResource(R.string.ui_text_051))});Button(enabled=adminFlockId.isNotBlank()&&adminFlockName.length>=3&&reason.length>=3,onClick={scope.launch{runCatching{api.adminForceFlockName(adminFlockId,adminFlockName,reason)}.onSuccess{message=context.getString(R.string.admin_flock_name_changed)}.onFailure{message=context.getString(R.string.admin_flock_name_failed)}}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_011))}}
+            else->LazyColumn{items(audits){a->Column(Modifier.fillMaxWidth().padding(8.dp)){Text(a.action,color=PanelGold,fontWeight=FontWeight.Bold);Text(a.reason,color=PanelCream);Text(a.createdAt,color=PanelCream.copy(alpha=.6f),fontSize=11.sp)}}}
+        }
+    }
+    if(confirmObjectPlacement)AlertDialog(
+        onDismissRequest={confirmObjectPlacement=false},
+        title={Text(stringResource(R.string.admin_update_title))},
+        text={Text(stringResource(R.string.admin_placement_warning))},
+        confirmButton={Button(onClick={confirmObjectPlacement=false;scope.launch{
+            runCatching{api.adminPlaceObject(type,lat.toDouble(),lon.toDouble(),variant.toInt(),reason,objectId.ifBlank{null})}
+                .onSuccess{message=context.getString(if(objectId.isBlank())R.string.admin_object_created else R.string.admin_object_updated)}
+                .onFailure{message=context.getString(if(objectId.isBlank())R.string.admin_object_create_failed else R.string.admin_object_update_failed)}
+        }}){Text(stringResource(R.string.admin_place_anyway))}},
+        dismissButton={TextButton(onClick={confirmObjectPlacement=false}){Text(stringResource(R.string.ui_text_006))}}
+    )
+}
+private fun poiTypeNameResource(type:String)=when(type){
+    "dog_park"->R.string.poi_type_dog_park
+    "pet_shop"->R.string.poi_type_pet_shop
+    "veterinary"->R.string.poi_type_veterinary
+    "grooming"->R.string.poi_type_grooming
+    else->R.string.poi_type_dog_wash
+}
