@@ -147,6 +147,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var poops by remember { mutableStateOf(emptyList<WorldPoop>()) }
     var treasureHunt by remember { mutableStateOf<TreasureHuntState?>(null) }
     var frasseEvent by remember { mutableStateOf(FrasseEventState()) }
+    var autoCollectingEventToyId by remember { mutableStateOf<String?>(null) }
     val eventIntroPrefs=remember(profile.playerId){context.getSharedPreferences("fbq_event_intro",Context.MODE_PRIVATE)}
     var dismissedEventIntroKey by remember(profile.playerId){mutableStateOf<String?>(null)}
     var mapPois by remember { mutableStateOf(emptyList<MapPoi>()) }
@@ -509,6 +510,26 @@ internal fun GameScreen(profile:SessionBootstrap) {
             }
             if(currentProfile.barkEnabled) runCatching { DogBarkPlayer.play() }
         }
+    }
+
+    // Frasse's event toys are deliberately the only world objects with
+    // automatic pickup. Everything else keeps its explicit action button.
+    LaunchedEffect(player,frasseEvent.toys,latestLocationAccuracy) {
+        val api=gameApi?:return@LaunchedEffect
+        val p=player?:return@LaunchedEffect
+        if(autoCollectingEventToyId!=null||latestLocationAccuracy>75f)return@LaunchedEffect
+        val pickupRadius=kotlin.math.max(30.0,kotlin.math.min(latestLocationAccuracy.toDouble(),60.0))
+        val toy=frasseEvent.toys.minByOrNull{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)}
+            ?.takeIf{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)<=pickupRadius}?:return@LaunchedEffect
+        autoCollectingEventToyId=toy.id
+        runCatching{api.claimEventToy(toy.id)}.onSuccess{claim->
+            frasseEvent=frasseEvent.copy(toyBalance=claim.toyBalance,toys=frasseEvent.toys.filterNot{it.id==toy.id})
+            status="Du hittade automatiskt en av Frasses leksaker! · ${claim.toyBalance} leksaker"
+        }.onFailure{error->
+            if(error.message?.contains("TOY_ALREADY_COLLECTED")==true||error.message?.contains("TOY_GONE")==true)
+                frasseEvent=frasseEvent.copy(toys=frasseEvent.toys.filterNot{it.id==toy.id})
+        }
+        autoCollectingEventToyId=null
     }
     val interactionRadius=GpsRules.interactionRadius(latestLocationAccuracy)
     val nearPoop=remember(player,poops,interactionRadius){val p=player?:return@remember null;poops.minByOrNull{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)}?.takeIf{distanceMeters(p.latitude,p.longitude,it.latitude,it.longitude)<=interactionRadius}}
