@@ -95,6 +95,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
+        if(ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED){
+            val cancellation=com.google.android.gms.tasks.CancellationTokenSource()
+            com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this)
+                .getCurrentLocation(com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY,cancellation.token)
+                .addOnSuccessListener{location->if(location!=null)StartupLocationFix.location=location}
+        }
         lifecycleScope.launch { SupabaseProvider.handleAuthDeepLink(intent) }
         setContent { FrasseAppRoot() }
     }
@@ -200,6 +206,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var visibleMapBounds by remember { mutableStateOf<MapBounds?>(null) }
 
     LaunchedEffect(profile.playerId) {
+        delay(700)
         gameApi?.let { api -> activeDog=runCatching { api.dogs().firstOrNull { it.isActive } }.getOrNull() }
     }
 
@@ -243,9 +250,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
     LaunchedEffect(Unit) {
         if (!permissionGranted) permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         gameApi?.let{api->
-            launch{runCatching{api.poiSettings()}.onSuccess{settings->poiSettings=settings}}
-            launch{runCatching{api.pendingPuppy()}.onSuccess{pendingPuppy=it}}
-            launch{runCatching{api.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}}}
+            launch{delay(700);runCatching{api.poiSettings()}.onSuccess{settings->poiSettings=settings}}
+            launch{delay(700);runCatching{api.pendingPuppy()}.onSuccess{pendingPuppy=it}}
+            launch{delay(700);runCatching{api.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}}}
             launch{runCatching{api.frasseEvent()}.onSuccess{frasseEvent=it}.onFailure{status="Eventet kunde inte laddas. Försöker igen när GPS är klar."}}
         }
     }
@@ -371,16 +378,6 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     } ?: true
                     scope.launch {
                         val requestNow=System.currentTimeMillis()
-                        val needsEventReload=lastEventCenter?.let {
-                            distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>100
-                        } ?: true
-                        if(needsEventReload&&!eventLoadInProgress&&gameApi!=null){
-                            eventLoadInProgress=true
-                            runCatching{gameApi.frasseEvent(point.latitude,point.longitude)}
-                                .onSuccess{event->frasseEvent=event;lastEventCenter=point}
-                                .onFailure{status="Frasses event kunde inte laddas. Försöker igen automatiskt."}
-                            eventLoadInProgress=false
-                        }
                         if(requestNow-lastPresenceSentAt>=5_000){
                             lastPresenceSentAt=requestNow
                             runCatching { worldRepository.updatePresence(
@@ -396,7 +393,16 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                 }
                                 .onFailure { status=context.getString(R.string.status_world_load_failed) }
                             loadingBones=false;worldLoadInProgress=false
-                            gameApi?.let{api->runCatching{api.frasseEvent(point.latitude,point.longitude)}.onSuccess{frasseEvent=it}}
+                            val needsEventReload=lastEventCenter?.let {
+                                distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>100
+                            } ?: true
+                            if(needsEventReload&&!eventLoadInProgress&&gameApi!=null){
+                                eventLoadInProgress=true
+                                runCatching{gameApi.frasseEvent(point.latitude,point.longitude)}
+                                    .onSuccess{event->frasseEvent=event;lastEventCenter=point}
+                                    .onFailure{status="Frasses event kunde inte laddas. Försöker igen automatiskt."}
+                                eventLoadInProgress=false
+                            }
                         }
                         val movedToNewArea=lastDiscoveryCenter?.let{distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>1_000}?:true
                         if(movedToNewArea){
@@ -612,6 +618,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                 home = currentProfile.homeLat?.let{lat->currentProfile.homeLon?.let{lon->GeoPoint(lat,lon)}},
                 followPlayer = followPlayer,
                 onManualMove = { followPlayer = false },
+                onDoubleTap = { followPlayer = true },
                 onBoundsChanged = { bounds ->
                     visibleMapBounds = bounds
                     worldRepository?.let { server ->
@@ -696,8 +703,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
             if (!followPlayer) {
                 FloatingActionButton(
                     onClick = { followPlayer = true },
-                    modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding()
-                        .padding(end=18.dp,bottom=if(compactActions.isEmpty())18.dp else 76.dp),
+                    modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().zIndex(3f)
+                        .padding(top=150.dp,end=18.dp),
                     containerColor = androidx.compose.ui.graphics.Color(0xFF213141)
                 ) { Text(stringResource(R.string.ui_text_088), fontSize = 28.sp) }
             }
@@ -1282,7 +1289,7 @@ private fun dirtDrawable(type:Int)=intArrayOf(
 @Composable
 private fun GameMap(
     player: GeoPoint?, bones: List<Bone>, piles: List<DirtPile>, poops:List<WorldPoop>,eventToys:List<EventToy>, treasureCheckpoints:List<TreasureCheckpoint>, pois: List<MapPoi>, nearbyPlayers:List<NearbyPlayer>,glints:List<GeoPoint>, playerMarkerId:String,playerGlow:String?,home:GeoPoint?, followPlayer: Boolean,
-    onManualMove: () -> Unit, onBoundsChanged: (MapBounds) -> Unit, onBoneTapped: (Bone) -> Unit,
+    onManualMove: () -> Unit,onDoubleTap:()->Unit, onBoundsChanged: (MapBounds) -> Unit, onBoneTapped: (Bone) -> Unit,
     onPlayerTapped: () -> Unit,onHomeTapped:()->Unit,onEmptyMapTapped:(GeoPoint)->Unit, onPileTapped: (DirtPile) -> Unit,onPoopTapped:(WorldPoop)->Unit,onEventToyTapped:(EventToy)->Unit,onTreasureTapped:(TreasureCheckpoint)->Unit,onPoiTapped:(MapPoi)->Unit, modifier: Modifier
 ) {
     val context = LocalContext.current
@@ -1305,10 +1312,16 @@ private fun GameMap(
     val latestPois by rememberUpdatedState(pois)
     val latestPoiTap by rememberUpdatedState(onPoiTapped)
     val latestBoundsChanged by rememberUpdatedState(onBoundsChanged)
+    val latestDoubleTap by rememberUpdatedState(onDoubleTap)
 
     val mapView = remember {
         MapView(context).apply {
+            val doubleTapDetector=android.view.GestureDetector(context,object:android.view.GestureDetector.SimpleOnGestureListener(){
+                override fun onDoubleTap(e:android.view.MotionEvent):Boolean{latestDoubleTap();return true}
+            })
+            setOnTouchListener{_,event->doubleTapDetector.onTouchEvent(event)}
             getMapAsync { libreMap ->
+                libreMap.uiSettings.isDoubleTapGesturesEnabled=false
                 libreMap.cameraPosition = CameraPosition.Builder()
                     .target(LatLng(59.51, 17.63))
                     .zoom(13.0)
