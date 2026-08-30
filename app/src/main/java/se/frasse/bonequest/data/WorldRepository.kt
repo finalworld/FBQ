@@ -1,5 +1,6 @@
 package se.frasse.bonequest
 
+import android.util.Log
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
@@ -124,13 +125,20 @@ class WorldRepository(private val client:SupabaseClient) {
         // Keep the core world available while optional feature migrations are rolling out.
         // A missing poop table must never hide bones and dirt piles from older databases.
         val poops=runCatching {
+            client.postgrest.rpc("list_visible_dog_poops",buildJsonObject {
+                put("p_latitude",center.latitude);put("p_longitude",center.longitude);put("p_radius_m",radiusMeters)
+            }).decodeList<WorldPoop>()
+        }.recoverCatching { error ->
+            // Keep compatibility while the server migration reaches every environment.
+            if(!error.isMissingRpc()) throw error
             client.from("world_dog_poops").select {
                 filter {
                     eq("active",true); gte("latitude",center.latitude-latDelta); lte("latitude",center.latitude+latDelta)
                     gte("longitude",center.longitude-lonDelta); lte("longitude",center.longitude+lonDelta)
                 }
             }.decodeList<WorldPoop>().filter { distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters }
-        }.getOrDefault(emptyList())
+        }.onFailure { Log.w("FBQ-World","Kunde inte hämta synliga bajshögar",it) }
+            .getOrDefault(emptyList())
         return WorldSnapshot(bones,piles,poops)
     }
 
