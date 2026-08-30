@@ -103,6 +103,16 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         lifecycleScope.launch { SupabaseProvider.handleAuthDeepLink(intent) }
     }
+
+    override fun onStart() {
+        super.onStart()
+        AppVisibility.isForeground = true
+    }
+
+    override fun onStop() {
+        AppVisibility.isForeground = false
+        super.onStop()
+    }
 }
 
 @Composable
@@ -165,11 +175,15 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var collecting by remember { mutableStateOf(false) }
     var collectionGlints by remember { mutableStateOf(emptyList<GeoPoint>()) }
     var lastWorldLoadAt by remember { mutableLongStateOf(0L) }
+    var lastPresenceSentAt by remember { mutableLongStateOf(0L) }
+    var worldLoadInProgress by remember { mutableStateOf(false) }
     var lastWorldCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var gpsHasBeenReady by remember { mutableStateOf(false) }
     var gpsWasInError by remember { mutableStateOf(false) }
     var poiDiscoveryDone by remember { mutableStateOf(false) }
+    var poiDiscoveryInProgress by remember { mutableStateOf(false) }
     var walkableDiscoveryDone by remember { mutableStateOf(false) }
+    var walkableDiscoveryInProgress by remember { mutableStateOf(false) }
     var lastDiscoveryCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var lastWalkableDiscoveryAttemptAt by remember { mutableLongStateOf(0L) }
     var permissionRefresh by remember { mutableIntStateOf(0) }
@@ -221,9 +235,11 @@ internal fun GameScreen(profile:SessionBootstrap) {
 
     LaunchedEffect(Unit) {
         if (!permissionGranted) permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-        gameApi?.let{runCatching{it.poiSettings()}.onSuccess{settings->poiSettings=settings}}
-        gameApi?.let{runCatching{it.pendingPuppy()}.onSuccess{pendingPuppy=it}}
-        gameApi?.let{runCatching{it.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}}}
+        gameApi?.let{api->
+            launch{runCatching{api.poiSettings()}.onSuccess{settings->poiSettings=settings}}
+            launch{runCatching{api.pendingPuppy()}.onSuccess{pendingPuppy=it}}
+            launch{runCatching{api.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}}}
+        }
     }
 
     LaunchedEffect(permissionGranted,currentProfile.walkingModeEnabled,permissionRefresh) {
@@ -272,24 +288,26 @@ internal fun GameScreen(profile:SessionBootstrap) {
             // Realtime normally updates the map immediately. Some Android
             // vendors silently suspend the websocket, so keep a small,
             // invisible safety refresh while the game screen is active.
+            var refreshTick=0
             while (true) {
                 delay(5_000)
+                refreshTick++
                 val center = player ?: continue
-                runCatching { server.loadNearby(center) }.onSuccess {
-                    bones=it.bones; piles=it.piles; poops=it.poops
+                if(refreshTick%3==0) runCatching { server.loadNearby(center) }.onSuccess {
+                    bones=it.bones;piles=it.piles;poops=it.poops
                 }
                 runCatching { server.nearbyPlayers() }.onSuccess { nearbyPlayers=it }
-                gameApi?.let { api -> runCatching { api.bootstrap() }.onSuccess { fresh ->
+                gameApi?.let { api -> if(refreshTick%6==0) runCatching { api.bootstrap() }.onSuccess { fresh ->
                     val sharedGain=(fresh.boneCount-currentProfile.boneCount).coerceAtLeast(0)
                     val sharedBones=(fresh.totalBones-currentProfile.totalBones).coerceAtLeast(0)
                     if(!collecting&&sharedGain>0&&sharedBones>0) status="Ni tog benet tillsammans · +$sharedGain ben"
                     boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                     currentProfile=fresh
-                };runCatching{api.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}};runCatching{api.dogs().firstOrNull{it.isActive}}.onSuccess{activeDog=it} }
-                gameApi?.let { api -> if(treasureResult==null) runCatching { api.pendingTreasureReward() }.onSuccess { pending ->
+                };if(refreshTick%3==0){runCatching{api.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}};runCatching{api.dogs().firstOrNull{it.isActive}}.onSuccess{activeDog=it}} }
+                gameApi?.let { api -> if(refreshTick%2==0&&treasureResult==null) runCatching { api.pendingTreasureReward() }.onSuccess { pending ->
                     if(pending!=null) treasureResult=pending
                 } }
-                gameApi?.let { api -> runCatching { api.latestSharedBoneReward() }.onSuccess { shared ->
+                gameApi?.let { api -> if(refreshTick%2==0) runCatching { api.latestSharedBoneReward() }.onSuccess { shared ->
                     if(sharedRewardInitialized&&shared!=null&&shared.collectionId!=latestSharedRewardId){
                         status="Ni tog ${localizedBoneName(context,shared.boneType)} tillsammans · +${shared.boneValue} ben"
                     }
@@ -343,9 +361,23 @@ internal fun GameScreen(profile:SessionBootstrap) {
                         distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>100
                     } ?: true
                     scope.launch {
-                        runCatching { worldRepository.updatePresence(
-                            point,location.accuracy,location.bearing,location.speed.takeIf { location.hasSpeed() }
-                        ) }.isSuccess
+                        val requestNow=System.currentTimeMillis()
+                        if(requestNow-lastPresenceSentAt>=5_000){
+                            lastPresenceSentAt=requestNow
+                            runCatching { worldRepository.updatePresence(
+                                point,location.accuracy,location.bearing,location.speed.takeIf { location.hasSpeed() }
+                            ) }
+                        }
+                        if(needsReload&&!worldLoadInProgress&&requestNow-lastWorldLoadAt>5_000){
+                            worldLoadInProgress=true;loadingBones=true
+                            runCatching { worldRepository.loadNearby(point) }
+                                .onSuccess { snapshot ->
+                                    bones=snapshot.bones;piles=snapshot.piles;poops=snapshot.poops
+                                    lastWorldCenter=point;lastWorldLoadAt=System.currentTimeMillis()
+                                }
+                                .onFailure { status=context.getString(R.string.status_world_load_failed) }
+                            loadingBones=false;worldLoadInProgress=false
+                        }
                         val movedToNewArea=lastDiscoveryCenter?.let{distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>1_000}?:true
                         if(movedToNewArea){
                             poiDiscoveryDone=false
@@ -353,14 +385,17 @@ internal fun GameScreen(profile:SessionBootstrap) {
                             lastWalkableDiscoveryAttemptAt=0L
                             lastDiscoveryCenter=point
                         }
-                        if(location.accuracy<=30&&!poiDiscoveryDone&&gameApi!=null){
-                            poiDiscoveryDone=true
+                        if(location.accuracy<=30&&!poiDiscoveryDone&&!poiDiscoveryInProgress&&gameApi!=null){
+                            poiDiscoveryInProgress=true
                             runCatching{OverpassClient.discoverDogPois(point)}.onSuccess{found->
                                 if(found.isNotEmpty())runCatching{gameApi.syncDiscoveredPois(found)}
+                                poiDiscoveryDone=true
                             }.onFailure{poiDiscoveryDone=false}
+                            poiDiscoveryInProgress=false
                         }
                         val discoveryNow=System.currentTimeMillis()
-                        if(location.accuracy<=30&&!walkableDiscoveryDone&&gameApi!=null&&discoveryNow-lastWalkableDiscoveryAttemptAt>=20_000){
+                        if(location.accuracy<=30&&!walkableDiscoveryDone&&!walkableDiscoveryInProgress&&gameApi!=null&&discoveryNow-lastWalkableDiscoveryAttemptAt>=60_000){
+                            walkableDiscoveryInProgress=true
                             lastWalkableDiscoveryAttemptAt=discoveryNow
                             runCatching{
                                 val walkable=OverpassClient.generateBones(point)
@@ -381,16 +416,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                                 // entire town empty until the player moved another kilometre.
                                 walkableDiscoveryDone=false
                             }
-                        }
-                        if (needsReload && System.currentTimeMillis()-lastWorldLoadAt>5_000) {
-                            loadingBones=true
-                            runCatching { worldRepository.loadNearby(point) }
-                                .onSuccess { snapshot ->
-                                    bones=snapshot.bones; piles=snapshot.piles; poops=snapshot.poops
-                                    lastWorldCenter=point; lastWorldLoadAt=System.currentTimeMillis()
-                                }
-                                .onFailure { status=context.getString(R.string.status_world_load_failed) }
-                            loadingBones=false
+                            walkableDiscoveryInProgress=false
                         }
                     }
                     return@start
@@ -512,7 +538,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
         val bone=nearBone?:return;val p0=player;collecting=true
         scope.launch {
             if(worldRepository!=null&&p0!=null)runCatching{worldRepository.collectNearbyBones(p0,latestLocationAccuracy,latestLocationHeading,latestLocationSpeed)}.fold(onSuccess={rewards->
-                val reward=rewards.sumOf{it.playerReward};val ids=if(p0==null)emptySet() else bones.filter{distanceMeters(p0.latitude,p0.longitude,it.latitude,it.longitude)<=25}.mapTo(mutableSetOf()){it.id}
+                val reward=rewards.sumOf{it.playerReward};val ids=bones.filter{distanceMeters(p0.latitude,p0.longitude,it.latitude,it.longitude)<=25}.mapTo(mutableSetOf()){it.id}
                 collectionGlints=bones.filter{it.id in ids}.map{GeoPoint(it.latitude,it.longitude)};bones=bones.filterNot{it.id in ids}
                 gameApi?.let{api->runCatching{api.bootstrap()}.onSuccess{fresh->currentProfile=fresh;boneCount=fresh.boneCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()}}
                 status=if((rewards.maxOfOrNull{it.rewardedPlayers}?:1)>1)context.getString(R.string.collect_group_reward,reward)+" · +$reward XP" else context.getString(R.string.collect_reward,reward)+" · +$reward XP"
@@ -605,7 +631,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     val distanceText=when{
                         meters==null->"okänt avstånd"
                         meters<1000.0->"${meters.toInt()} m bort"
-                        else->String.format(java.util.Locale("sv","SE"),"%.1f km bort",meters/1000.0)
+                        else->String.format(java.util.Locale.forLanguageTag("sv-SE"),"%.1f km bort",meters/1000.0)
                     }
                     status="Ledtråd ${checkpoint.sequence}/${treasureHunt?.checkpoints?.size?:0} · $distanceText"
                 },
@@ -980,6 +1006,7 @@ private fun timeUntilRefresh(updatedAt:String,hours:Long=10):String=runCatching{
             )
         }
     }
+
 }
 
 @Composable private fun ActiveDogHudCard(dog:DogProfile,collapsed:Boolean,onToggle:()->Unit,onInfo:()->Unit,modifier:Modifier=Modifier){

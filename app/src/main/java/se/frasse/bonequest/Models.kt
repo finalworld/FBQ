@@ -21,8 +21,8 @@ fun boneValue(type: Int): Int = BONE_VALUES[type.coerceIn(BONE_VALUES.indices)]
 fun weightedBoneType(seed: Int): Int {
     val roll = Math.floorMod(seed, 10_000)
     return when {
-        roll < 4200 -> 0; roll < 6500 -> 1; roll < 7900 -> 2; roll < 8750 -> 3
-        roll < 9250 -> 4; roll < 9550 -> 5; roll < 9730 -> 6; roll < 9840 -> 7
-        roll < 9910 -> 8; roll < 9960 -> 9; roll < 9990 -> 10; else -> 11
+        roll < 1700 -> 0; roll < 3600 -> 1; roll < 5300 -> 2; roll < 6800 -> 3
+        roll < 7900 -> 4; roll < 8700 -> 5; roll < 9200 -> 6; roll < 9550 -> 7
+        roll < 9770 -> 8; roll < 9900 -> 9; roll < 9970 -> 10; else -> 11
     }
 }

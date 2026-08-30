@@ -10,6 +10,8 @@ import io.github.jan.supabase.realtime.postgresChangeFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -101,10 +103,10 @@ class WorldRepository(private val client:SupabaseClient) {
 
     suspend fun subscribe() { channel.subscribe(blockUntilSubscribed=true) }
 
-    suspend fun loadNearby(center:GeoPoint,radiusMeters:Double=2_000.0):WorldSnapshot {
+    suspend fun loadNearby(center:GeoPoint,radiusMeters:Double=2_000.0):WorldSnapshot = coroutineScope {
         val latDelta=radiusMeters/111_320.0
         val lonDelta=radiusMeters/(111_320.0*cos(Math.toRadians(center.latitude)).coerceAtLeast(.05))
-        val bones=client.from("world_bones").select {
+        val bonesRequest=async { client.from("world_bones").select {
             filter {
                 eq("active",true); gte("latitude",center.latitude-latDelta); lte("latitude",center.latitude+latDelta)
                 gte("longitude",center.longitude-lonDelta); lte("longitude",center.longitude+lonDelta)
@@ -112,8 +114,8 @@ class WorldRepository(private val client:SupabaseClient) {
         }.decodeList<WorldBoneRow>().filter {
             it.hasValidMapData() &&
                 distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters
-        }.map { Bone(it.id,it.latitude,it.longitude,it.boneType,it.updatedAt) }
-        val piles=client.from("dirt_piles").select {
+        }.map { Bone(it.id,it.latitude,it.longitude,it.boneType,it.updatedAt) } }
+        val pilesRequest=async { client.from("dirt_piles").select {
             filter {
                 eq("active",true); gte("latitude",center.latitude-latDelta); lte("latitude",center.latitude+latDelta)
                 gte("longitude",center.longitude-lonDelta); lte("longitude",center.longitude+lonDelta)
@@ -121,10 +123,10 @@ class WorldRepository(private val client:SupabaseClient) {
         }.decodeList<DirtPileRow>().filter {
             it.hasValidMapData() &&
                 distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters
-        }.map { DirtPile(it.id,it.latitude,it.longitude,it.cost,it.pileType,it.updatedAt) }
+        }.map { DirtPile(it.id,it.latitude,it.longitude,it.cost,it.pileType,it.updatedAt) } }
         // Keep the core world available while optional feature migrations are rolling out.
         // A missing poop table must never hide bones and dirt piles from older databases.
-        val poops=runCatching {
+        val poopsRequest=async { runCatching {
             client.postgrest.rpc("list_visible_dog_poops",buildJsonObject {
                 put("p_latitude",center.latitude);put("p_longitude",center.longitude);put("p_radius_m",radiusMeters)
             }).decodeList<WorldPoop>()
@@ -138,8 +140,8 @@ class WorldRepository(private val client:SupabaseClient) {
                 }
             }.decodeList<WorldPoop>().filter { distanceMeters(center.latitude,center.longitude,it.latitude,it.longitude)<=radiusMeters }
         }.onFailure { Log.w("FBQ-World","Kunde inte hämta synliga bajshögar",it) }
-            .getOrDefault(emptyList())
-        return WorldSnapshot(bones,piles,poops)
+            .getOrDefault(emptyList()) }
+        WorldSnapshot(bonesRequest.await(),pilesRequest.await(),poopsRequest.await())
     }
 
     suspend fun updatePresence(point:GeoPoint,accuracy:Float,heading:Float=0f,speed:Float?=null) {

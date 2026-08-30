@@ -17,6 +17,7 @@ import se.frasse.bonequest.R
 import se.frasse.bonequest.SupabaseProvider
 import se.frasse.bonequest.GeoPoint
 import se.frasse.bonequest.WorldRepository
+import se.frasse.bonequest.AppVisibility
 import se.frasse.bonequest.audio.DogBarkPlayer
 import kotlinx.coroutines.flow.first
 import java.text.NumberFormat
@@ -50,7 +51,7 @@ class WalkingLocationService : Service() {
                     updateNotification()
                     if (System.currentTimeMillis()-batchStartedAt>=60_000) flushBatch()
                 }
-                serviceScope.launch {
+                if(!AppVisibility.isForeground) serviceScope.launch {
                     SupabaseProvider.clientOrNull?.let { client ->
                         runCatching { DistanceSyncRepository(client).updatePresence(sample,location.bearing,true) }
                         runCatching { WorldRepository(client).loadNearby(GeoPoint(sample.latitude,sample.longitude),25.0) }
