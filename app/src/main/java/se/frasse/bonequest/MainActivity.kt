@@ -141,6 +141,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var poops by remember { mutableStateOf(emptyList<WorldPoop>()) }
     var treasureHunt by remember { mutableStateOf<TreasureHuntState?>(null) }
     var frasseEvent by remember { mutableStateOf(FrasseEventState()) }
+    val eventIntroPrefs=remember(profile.playerId){context.getSharedPreferences("fbq_event_intro",Context.MODE_PRIVATE)}
+    var dismissedEventIntroKey by remember(profile.playerId){mutableStateOf<String?>(null)}
     var mapPois by remember { mutableStateOf(emptyList<MapPoi>()) }
     var nearbyPlayers by remember { mutableStateOf(emptyList<NearbyPlayer>()) }
     var poiSettings by remember { mutableStateOf(PoiSettings()) }
@@ -181,6 +183,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var lastPresenceSentAt by remember { mutableLongStateOf(0L) }
     var worldLoadInProgress by remember { mutableStateOf(false) }
     var lastWorldCenter by remember { mutableStateOf<GeoPoint?>(null) }
+    var lastEventCenter by remember { mutableStateOf<GeoPoint?>(null) }
+    var eventLoadInProgress by remember { mutableStateOf(false) }
     var gpsHasBeenReady by remember { mutableStateOf(false) }
     var gpsWasInError by remember { mutableStateOf(false) }
     var poiDiscoveryDone by remember { mutableStateOf(false) }
@@ -242,7 +246,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
             launch{runCatching{api.poiSettings()}.onSuccess{settings->poiSettings=settings}}
             launch{runCatching{api.pendingPuppy()}.onSuccess{pendingPuppy=it}}
             launch{runCatching{api.treasureHunt()}.onSuccess{hunt->treasureHunt=hunt.takeIf{it.active}}}
-            launch{runCatching{api.frasseEvent()}.onSuccess{frasseEvent=it}}
+            launch{runCatching{api.frasseEvent()}.onSuccess{frasseEvent=it}.onFailure{status="Eventet kunde inte laddas. Försöker igen när GPS är klar."}}
         }
     }
 
@@ -367,6 +371,16 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     } ?: true
                     scope.launch {
                         val requestNow=System.currentTimeMillis()
+                        val needsEventReload=lastEventCenter?.let {
+                            distanceMeters(it.latitude,it.longitude,point.latitude,point.longitude)>100
+                        } ?: true
+                        if(needsEventReload&&!eventLoadInProgress&&gameApi!=null){
+                            eventLoadInProgress=true
+                            runCatching{gameApi.frasseEvent(point.latitude,point.longitude)}
+                                .onSuccess{event->frasseEvent=event;lastEventCenter=point}
+                                .onFailure{status="Frasses event kunde inte laddas. Försöker igen automatiskt."}
+                            eventLoadInProgress=false
+                        }
                         if(requestNow-lastPresenceSentAt>=5_000){
                             lastPresenceSentAt=requestNow
                             runCatching { worldRepository.updatePresence(
@@ -821,7 +835,9 @@ internal fun GameScreen(profile:SessionBootstrap) {
             }
         }
 
-        if(frasseEvent.active&&frasseEvent.showIntro&&frasseEvent.eventId!=null&&frasseEvent.eventDay!=null){
+        val eventIntroKey=if(frasseEvent.eventId!=null&&frasseEvent.eventDay!=null)"${frasseEvent.eventId}_${frasseEvent.eventDay}" else null
+        val showEventIntro=frasseEvent.active&&eventIntroKey!=null&&dismissedEventIntroKey!=eventIntroKey&&!eventIntroPrefs.getBoolean(eventIntroKey,false)
+        if(showEventIntro){
             AlertDialog(onDismissRequest={},title={Text(frasseEvent.title,color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontSize=25.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center)},text={
                 Column(Modifier.fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(10.dp)){
                     Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){listOf(0,2,8,12,16).forEach{Image(eventToyBitmap(context,it).asImageBitmap(),null,Modifier.size(46.dp))}}
@@ -829,7 +845,7 @@ internal fun GameScreen(profile:SessionBootstrap) {
                     Surface(color=androidx.compose.ui.graphics.Color(0xFF17383A),shape=RoundedCornerShape(8.dp)){Column(Modifier.padding(10.dp)){Text("EN NY FLYKT VARJE MORGON",color=androidx.compose.ui.graphics.Color(0xFF72E0D8),fontWeight=FontWeight.Black);Text("Klockan 07.00 försvinner dagens leksaker och Frasse tappar ut en helt ny omgång. Varje leksak är din egen och ger 1 leksakspoäng.")}}
                     Text("Samla 100 och köp en glödande markör!",color=androidx.compose.ui.graphics.Color(0xFFFFC85B),fontWeight=FontWeight.Black)
                 }
-            },confirmButton={Button(onClick={val id=frasseEvent.eventId!!;val day=frasseEvent.eventDay!!;frasseEvent=frasseEvent.copy(showIntro=false);scope.launch{runCatching{gameApi?.acknowledgeEventIntro(id,day)}}}){Text("HJÄLP FRASSE!")}})
+            },confirmButton={Button(onClick={val id=frasseEvent.eventId!!;val day=frasseEvent.eventDay!!;eventIntroPrefs.edit().putBoolean(eventIntroKey,true).apply();dismissedEventIntroKey=eventIntroKey;frasseEvent=frasseEvent.copy(showIntro=false);scope.launch{runCatching{gameApi?.acknowledgeEventIntro(id,day)}}}){Text("HJÄLP FRASSE!")}})
         }
 
         pendingPuppy?.let{puppy->
