@@ -42,7 +42,7 @@ import kotlinx.coroutines.withContext
 import se.frasse.bonequest.walking.WalkingPreferences
 import se.frasse.bonequest.walking.WalkingServiceController
 
-enum class GamePanel { PROFILE, COLLECTION, EQUIPMENT, DOGS, EVENT_LOG, TREASURE_HUNT, FLOCKS, HOME, SETTINGS, ADMIN, SHOP }
+enum class GamePanel { PROFILE, COLLECTION, EQUIPMENT, DOGS, EVENT, EVENT_LOG, TREASURE_HUNT, FLOCKS, HOME, SETTINGS, ADMIN, SHOP }
 
 private val PanelDark=Color(0xFF151B1D)
 private val PanelGold=Color(0xFFE2AA3D)
@@ -69,6 +69,7 @@ private val PanelTeal=Color(0xFF168D8A)
                 MenuTile("🦴",stringResource(R.string.menu_collection)) { panel=GamePanel.COLLECTION }
                 MenuTile("🎒",stringResource(R.string.menu_equipment)) { panel=GamePanel.EQUIPMENT }
                 MenuTile("🐶","Hundar") { panel=GamePanel.DOGS }
+                MenuTile("🧸","Frasses event") { panel=GamePanel.EVENT }
                 MenuTile("📜","Logg") { panel=GamePanel.EVENT_LOG }
                 MenuTile("🗺️","Skattjakt") { panel=GamePanel.TREASURE_HUNT }
                 MenuTile("🐕",stringResource(R.string.menu_flocks)) { panel=GamePanel.FLOCKS }
@@ -88,13 +89,14 @@ private val PanelTeal=Color(0xFF168D8A)
                 }
                 HorizontalDivider(color=PanelGold.copy(alpha=.6f));Spacer(Modifier.height(10.dp))
                 Box(Modifier.fillMaxSize()){
-                    if(!serverActionsEnabled&&panel in setOf(GamePanel.EQUIPMENT,GamePanel.FLOCKS,GamePanel.HOME,GamePanel.ADMIN,GamePanel.SHOP)){
+                    if(!serverActionsEnabled&&panel in setOf(GamePanel.EQUIPMENT,GamePanel.EVENT,GamePanel.FLOCKS,GamePanel.HOME,GamePanel.ADMIN,GamePanel.SHOP)){
                         Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text(stringResource(R.string.ui_text_048),color=Color(0xFFFF6B5D),fontSize=22.sp,fontWeight=FontWeight.Black);Text(stringResource(R.string.ui_text_014),color=PanelCream,textAlign=TextAlign.Center)}
                     } else when(panel){
                         GamePanel.PROFILE->ProfilePanel(profile,api,onProfile){panel=GamePanel.COLLECTION}
                         GamePanel.COLLECTION->CollectionPanel(api)
                         GamePanel.EQUIPMENT->EquipmentPanel(api,onProfile)
                         GamePanel.DOGS->DogsPanel(profile,api,onBalance,onProfile)
+                        GamePanel.EVENT->FrasseEventPanel(api)
                         GamePanel.EVENT_LOG->EventLogPanel(api)
                         GamePanel.TREASURE_HUNT->TreasureHuntPanel(api,onBalance,huntLocation,huntAccuracy)
                         GamePanel.FLOCKS->FlocksPanel(api,onBalance)
@@ -137,7 +139,7 @@ private val PanelTeal=Color(0xFF168D8A)
             }
             HorizontalDivider(color=PanelGold)
             Box(Modifier.fillMaxSize().padding(14.dp)) {
-                if(!serverActionsEnabled&&panel in setOf(GamePanel.EQUIPMENT,GamePanel.FLOCKS,GamePanel.HOME,GamePanel.ADMIN,GamePanel.SHOP)){
+                if(!serverActionsEnabled&&panel in setOf(GamePanel.EQUIPMENT,GamePanel.EVENT,GamePanel.FLOCKS,GamePanel.HOME,GamePanel.ADMIN,GamePanel.SHOP)){
                     Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text(stringResource(R.string.ui_text_048),color=Color(0xFFFF6B5D),fontSize=25.sp,fontWeight=FontWeight.Black);Text(stringResource(R.string.ui_text_014),color=PanelCream,textAlign=TextAlign.Center)}
                     return@Box
                 }
@@ -146,6 +148,7 @@ private val PanelTeal=Color(0xFF168D8A)
                     GamePanel.COLLECTION -> CollectionPanel(api)
                     GamePanel.EQUIPMENT -> EquipmentPanel(api,onProfile)
                     GamePanel.DOGS -> DogsPanel(profile,api,onBalance,onProfile)
+                    GamePanel.EVENT -> FrasseEventPanel(api)
                     GamePanel.EVENT_LOG -> EventLogPanel(api)
                     GamePanel.TREASURE_HUNT -> TreasureHuntPanel(api,onBalance,huntLocation,huntAccuracy)
                     GamePanel.FLOCKS -> FlocksPanel(api,onBalance)
@@ -161,7 +164,7 @@ private val PanelTeal=Color(0xFF168D8A)
 
 private fun panelTitleResource(p:GamePanel)=when(p){
     GamePanel.PROFILE->R.string.panel_profile;GamePanel.COLLECTION->R.string.panel_collection;GamePanel.EQUIPMENT->R.string.panel_equipment
-    GamePanel.DOGS->R.string.panel_dogs;GamePanel.EVENT_LOG->R.string.panel_event_log;GamePanel.TREASURE_HUNT->R.string.panel_treasure_hunt
+    GamePanel.DOGS->R.string.panel_dogs;GamePanel.EVENT->R.string.panel_frasse_event;GamePanel.EVENT_LOG->R.string.panel_event_log;GamePanel.TREASURE_HUNT->R.string.panel_treasure_hunt
     GamePanel.FLOCKS->R.string.panel_flocks;GamePanel.HOME->R.string.panel_home;GamePanel.SETTINGS->R.string.panel_settings
     GamePanel.ADMIN->R.string.panel_admin;GamePanel.SHOP->R.string.panel_shop
 }
@@ -530,6 +533,27 @@ private fun localizedRoleName(role:String,context:android.content.Context)=conte
 private fun flockIconGlyph(iconId:String)=when(iconId){"flock_paw_shield"->"🛡️";else->"🐾"}
 private fun shortTimestamp(value:String)=runCatching{java.time.Instant.parse(value).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}.getOrDefault(value.take(16))
 
+@Composable private fun FrasseEventPanel(api:GameApiRepository){
+    val scope=rememberCoroutineScope();val context=LocalContext.current
+    var state by remember{mutableStateOf(FrasseEventState())};var busy by remember{mutableStateOf(false)};var message by remember{mutableStateOf<String?>(null)}
+    fun reload(){scope.launch{runCatching{api.frasseEvent()}.onSuccess{state=it}.onFailure{message="Kunde inte hämta eventet."}}}
+    LaunchedEffect(Unit){reload()}
+    if(!state.active){Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text("Frasse är hemma just nu",color=PanelGold,fontSize=22.sp,fontWeight=FontWeight.Black);Text("Ett event kan startas från adminpanelen.",color=PanelCream,textAlign=TextAlign.Center)}}
+    else LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){
+        item{Text("🧸  ${state.toyBalance} LEKSAKER",color=PanelGold,fontSize=25.sp,fontWeight=FontWeight.Black);Text("Varje glow kostar 100 leksaker och kan användas på din vanliga markör.",color=PanelCream);state.endsAt?.let{Text("Eventet slutar ${shortTimestamp(it)}",color=PanelCream.copy(alpha=.7f),fontSize=12.sp)};message?.let{Text(it,color=Color(0xFFFF8A70))}}
+        items(state.glows){glow->
+            val name=when(glow.colorId){"gold"->"Guld";"red"->"Röd";"pink"->"Rosa";"purple"->"Lila";"blue"->"Blå";"cyan"->"Turkos";"green"->"Grön";"lime"->"Lime";"orange"->"Orange";else->"Vit"}
+            Row(Modifier.fillMaxWidth().background(if(glow.equipped)Color(0xFF4A3A18) else Color(0xFF20282A),RoundedCornerShape(8.dp)).padding(9.dp),verticalAlignment=Alignment.CenterVertically){
+                Image(markerBitmapWithGlow(context,"marker_paw_standard",glow.colorId).asImageBitmap(),null,Modifier.size(62.dp));Column(Modifier.weight(1f).padding(start=9.dp)){Text("$name glow",color=PanelCream,fontWeight=FontWeight.Bold);Text(if(glow.owned)"Ägd" else "100 leksaker",color=PanelGold)}
+                Button(enabled=!busy&&!glow.equipped&&((glow.owned)||state.toyBalance>=100),onClick={busy=true;scope.launch{
+                    runCatching{if(glow.owned){api.equipEventGlow(glow.colorId);null}else api.buyEventGlow(glow.colorId)}.onSuccess{reload();message=if(glow.owned)"$name glow är vald." else "$name glow köpt och vald!"}.onFailure{message=if(it.message?.contains("NOT_ENOUGH_TOYS")==true)"Du behöver 100 leksaker." else "Kunde inte välja glow."};busy=false
+                }}){Text(if(glow.equipped)"VALD" else if(glow.owned)"VÄLJ" else "KÖP")}
+            }
+        }
+        item{OutlinedButton(enabled=!busy&&state.equippedGlow!=null,onClick={scope.launch{busy=true;runCatching{api.equipEventGlow("none")}.onSuccess{reload();message="Glow avstängd."};busy=false}},modifier=Modifier.fillMaxWidth()){Text("INGEN GLOW")}}
+    }
+}
+
 @Composable private fun AdminPanel(api:GameApiRepository,onMapMode:()->Unit){
     val scope=rememberCoroutineScope();val context=LocalContext.current;var tab by remember{mutableIntStateOf(0)}
     var search by remember{mutableStateOf("")};var players by remember{mutableStateOf<List<AdminPlayer>>(emptyList())};var selected by remember{mutableStateOf<AdminPlayer?>(null)}
@@ -541,9 +565,14 @@ private fun shortTimestamp(value:String)=runCatching{java.time.Instant.parse(val
     var adminFlockId by remember{mutableStateOf("")};var adminFlockName by remember{mutableStateOf("")}
     var confirmObjectPlacement by remember{mutableStateOf(false)}
     var message by remember{mutableStateOf<String?>(null)};var audits by remember{mutableStateOf<List<AdminAudit>>(emptyList())}
+    var adminEvent by remember{mutableStateOf(FrasseEventState())};var eventBusy by remember{mutableStateOf(false)}
     fun find(){scope.launch{runCatching{api.adminPlayers(search)}.onSuccess{players=it;selected=null;message=if(it.isEmpty())"Inga spelare hittades" else null}.onFailure{message="Spelarsökning misslyckades: ${it.message.orEmpty()}"}}}
+    LaunchedEffect(Unit){adminEvent=runCatching{api.adminFrasseEvent()}.getOrDefault(FrasseEventState())}
     Column{
         Text(stringResource(R.string.ui_text_004),color=Color(0xFFFF6B5D),fontWeight=FontWeight.Black)
+        Surface(Modifier.fillMaxWidth().padding(vertical=5.dp),color=if(adminEvent.active)Color(0xFF173C32) else Color(0xFF2B3032),shape=RoundedCornerShape(8.dp)){
+            Column(Modifier.padding(10.dp)){Text("VECKOEVENT · FRASSE HAR RYMT",color=PanelGold,fontWeight=FontWeight.Black);Text(if(adminEvent.active)"AKTIVT till ${adminEvent.endsAt?.let(::shortTimestamp).orEmpty()}" else "Inte aktivt",color=PanelCream);Button(enabled=!eventBusy,onClick={eventBusy=true;scope.launch{runCatching{api.adminSetFrasseEvent(!adminEvent.active)}.onSuccess{adminEvent=it;message=if(it.active)"Eventet är startat i 7 dagar." else "Eventet är stoppat."}.onFailure{message="Kunde inte ändra eventet: ${it.message.orEmpty()}"};eventBusy=false}},modifier=Modifier.fillMaxWidth()){Text(if(adminEvent.active)"STOPPA EVENT" else "STARTA I 7 DAGAR")}}
+        }
         Button(onClick=onMapMode,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.ui_text_083))}
         TabRow(tab){listOf(R.string.admin_tab_players,R.string.admin_tab_objects,R.string.admin_tab_places,R.string.admin_tab_flocks,R.string.admin_tab_log).forEachIndexed{i,t->Tab(tab==i,{tab=i;if(i==4)scope.launch{audits=runCatching{api.audit()}.getOrDefault(emptyList())}},text={Text(stringResource(t),fontSize=9.sp)})}}
         message?.let{Text(it,color=PanelGold,modifier=Modifier.padding(7.dp))}

@@ -159,6 +159,17 @@ private inline fun <reified T> decodeRpcObject(raw:String):T {
     val details:kotlinx.serialization.json.JsonElement,@SerialName("created_at") val createdAt:String
 )
 @Serializable data class PoiSettings(@SerialName("show_dog_parks") val showDogParks:Boolean=true,@SerialName("show_pet_shops") val showPetShops:Boolean=true,@SerialName("show_vets") val showVets:Boolean=true,@SerialName("show_grooming") val showGrooming:Boolean=true)
+@Serializable data class EventToy(val id:String,@SerialName("toy_type") val toyType:Int,val latitude:Double,val longitude:Double)
+@Serializable data class EventGlow(@SerialName("color_id") val colorId:String,val owned:Boolean=false,val equipped:Boolean=false)
+@Serializable data class FrasseEventState(
+    val active:Boolean=false,@SerialName("event_id") val eventId:String?=null,val title:String="FRASSE HAR RYMT!",
+    val story:String="",@SerialName("ends_at") val endsAt:String?=null,@SerialName("event_day") val eventDay:String?=null,
+    @SerialName("show_intro") val showIntro:Boolean=false,@SerialName("toy_balance") val toyBalance:Int=0,
+    @SerialName("equipped_glow") val equippedGlow:String?=null,val toys:List<EventToy> = emptyList(),val glows:List<EventGlow> = emptyList(),
+    @SerialName("starts_at") val startsAt:String?=null
+)
+@Serializable data class EventToyClaim(@SerialName("toy_id") val toyId:String,@SerialName("toy_type") val toyType:Int,@SerialName("toy_balance") val toyBalance:Int)
+@Serializable data class EventGlowPurchase(@SerialName("toy_balance") val toyBalance:Int,@SerialName("equipped_glow") val equippedGlow:String,@SerialName("already_owned") val alreadyOwned:Boolean=false)
 
 class GameApiRepository(private val client:SupabaseClient) {
     suspend fun bootstrap():SessionBootstrap = client.postgrest.rpc("get_session_bootstrap").decodeSingle()
@@ -222,6 +233,18 @@ class GameApiRepository(private val client:SupabaseClient) {
         }
     )
     suspend fun poiSettings():PoiSettings=client.postgrest.rpc("get_poi_settings").decodeSingle()
+    suspend fun frasseEvent(latitude:Double?=null,longitude:Double?=null):FrasseEventState {
+        val response=client.postgrest.rpc("get_frasse_escape_event",buildJsonObject {
+            if(latitude==null)put("p_latitude",kotlinx.serialization.json.JsonNull) else put("p_latitude",latitude)
+            if(longitude==null)put("p_longitude",kotlinx.serialization.json.JsonNull) else put("p_longitude",longitude)
+        });return decodeRpcObject(response.data)
+    }
+    suspend fun claimEventToy(id:String):EventToyClaim=decodeRpcObject(client.postgrest.rpc("claim_event_toy",buildJsonObject{put("p_toy_id",id)}).data)
+    suspend fun acknowledgeEventIntro(eventId:String,eventDay:String)=client.postgrest.rpc("acknowledge_event_intro",buildJsonObject{put("p_event_id",eventId);put("p_event_day",eventDay)})
+    suspend fun buyEventGlow(colorId:String):EventGlowPurchase=decodeRpcObject(client.postgrest.rpc("buy_event_glow",buildJsonObject{put("p_color_id",colorId)}).data)
+    suspend fun equipEventGlow(colorId:String)=client.postgrest.rpc("equip_event_glow",buildJsonObject{put("p_color_id",colorId)})
+    suspend fun adminFrasseEvent():FrasseEventState=decodeRpcObject(client.postgrest.rpc("admin_get_frasse_event").data)
+    suspend fun adminSetFrasseEvent(enabled:Boolean):FrasseEventState=decodeRpcObject(client.postgrest.rpc("admin_set_frasse_event",buildJsonObject{put("p_enabled",enabled)}).data)
     suspend fun updatePoiSettings(settings:PoiSettings)=client.postgrest.rpc("update_poi_settings",buildJsonObject{put("p_show_dog_parks",settings.showDogParks);put("p_show_pet_shops",settings.showPetShops);put("p_show_vets",settings.showVets);put("p_show_grooming",settings.showGrooming)})
     suspend fun setHome():HomeResult = client.postgrest.rpc("set_home_here").decodeSingle()
     suspend fun spinHome(stake:Int):SlotResult = client.postgrest.rpc("spin_home_slot",buildJsonObject {

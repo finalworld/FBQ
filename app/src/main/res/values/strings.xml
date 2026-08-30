@@ -319,5 +319,6 @@
     <string name="admin_flock_help">Rätta ett olämpligt flocknamn. Åtgärden loggas och kräver flockens ID.</string>
     <string name="panel_dogs">HUNDAR</string>
     <string name="panel_event_log">LOGG</string>
+    <string name="panel_frasse_event">FRASSE HAR RYMT</string>
     <string name="panel_treasure_hunt">FRASSES SKATTJAKT</string>
 </resources>

@@ -315,6 +315,7 @@
     <string name="admin_flock_help">Rätta ett olämpligt flocknamn. Åtgärden loggas och kräver flockens ID.</string>
     <string name="panel_dogs">HUNDAR</string>
     <string name="panel_event_log">LOGG</string>
+    <string name="panel_frasse_event">FRASSE HAR RYMT</string>
     <string name="admin_bone_adjustment">Ändra antal ben</string>
     <string name="admin_bone_adjustment_help">Skriv 100 för att ge ben eller -50 för att ta bort ben.</string>
     <string name="admin_action_reason">Orsak (sparas i adminloggen)</string>
