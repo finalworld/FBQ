@@ -536,19 +536,20 @@ private fun shortTimestamp(value:String)=runCatching{java.time.Instant.parse(val
 
 @Composable private fun FrasseEventPanel(api:GameApiRepository){
     val scope=rememberCoroutineScope();val context=LocalContext.current
-    var state by remember{mutableStateOf(FrasseEventState())};var busy by remember{mutableStateOf(false)};var message by remember{mutableStateOf<String?>(null)}
-    fun reload(){scope.launch{runCatching{api.frasseEvent()}.onSuccess{state=it}.onFailure{message="Kunde inte hämta eventet."}}}
+    var state by remember{mutableStateOf(FrasseEventState())};var busy by remember{mutableStateOf(false)};var loading by remember{mutableStateOf(true)};var message by remember{mutableStateOf<String?>(null)}
+    fun reload(){scope.launch{loading=true;runCatching{api.frasseEvent()}.onSuccess{state=it;message=null}.onFailure{message="Eventet kunde inte laddas: ${it.message.orEmpty().lineSequence().firstOrNull().orEmpty()}"};loading=false}}
     LaunchedEffect(Unit){reload()}
-    if(!state.active){Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text("Frasse är hemma just nu",color=PanelGold,fontSize=22.sp,fontWeight=FontWeight.Black);Text("Ett event kan startas från adminpanelen.",color=PanelCream,textAlign=TextAlign.Center)}}
+    if(loading){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator(color=PanelGold)}}
+    else if(!state.active){Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Text(if(message==null)"Frasse är hemma just nu" else "EVENTFEL",color=if(message==null)PanelGold else Color(0xFFFF6B5D),fontSize=22.sp,fontWeight=FontWeight.Black);Text(message?:"Ett event kan startas från adminpanelen.",color=PanelCream,textAlign=TextAlign.Center);if(message!=null)Button(onClick={reload()},modifier=Modifier.padding(top=12.dp)){Text("FÖRSÖK IGEN")}}}
     else LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){
         item{Text("🧸  ${state.toyBalance} LEKSAKER",color=PanelGold,fontSize=25.sp,fontWeight=FontWeight.Black);Text("Varje glow kostar 100 leksaker och kan användas på din vanliga markör.",color=PanelCream);state.endsAt?.let{Text("Eventet slutar ${shortTimestamp(it)}",color=PanelCream.copy(alpha=.7f),fontSize=12.sp)};message?.let{Text(it,color=Color(0xFFFF8A70))}}
         items(state.glows){glow->
             val name=when(glow.colorId){"gold"->"Guld";"red"->"Röd";"pink"->"Rosa";"purple"->"Lila";"blue"->"Blå";"cyan"->"Turkos";"green"->"Grön";"lime"->"Lime";"orange"->"Orange";else->"Vit"}
-            Row(Modifier.fillMaxWidth().background(if(glow.equipped)Color(0xFF4A3A18) else Color(0xFF20282A),RoundedCornerShape(8.dp)).padding(9.dp),verticalAlignment=Alignment.CenterVertically){
+            Row(Modifier.fillMaxWidth().background(if(glow.equipped==true)Color(0xFF4A3A18) else Color(0xFF20282A),RoundedCornerShape(8.dp)).padding(9.dp),verticalAlignment=Alignment.CenterVertically){
                 Image(markerBitmapWithGlow(context,"marker_paw_standard",glow.colorId).asImageBitmap(),null,Modifier.size(62.dp));Column(Modifier.weight(1f).padding(start=9.dp)){Text("$name glow",color=PanelCream,fontWeight=FontWeight.Bold);Text(if(glow.owned)"Ägd" else "100 leksaker",color=PanelGold)}
-                Button(enabled=!busy&&!glow.equipped&&((glow.owned)||state.toyBalance>=100),onClick={busy=true;scope.launch{
+                Button(enabled=!busy&&glow.equipped!=true&&((glow.owned)||state.toyBalance>=100),onClick={busy=true;scope.launch{
                     runCatching{if(glow.owned){api.equipEventGlow(glow.colorId);null}else api.buyEventGlow(glow.colorId)}.onSuccess{reload();message=if(glow.owned)"$name glow är vald." else "$name glow köpt och vald!"}.onFailure{message=if(it.message?.contains("NOT_ENOUGH_TOYS")==true)"Du behöver 100 leksaker." else "Kunde inte välja glow."};busy=false
-                }}){Text(if(glow.equipped)"VALD" else if(glow.owned)"VÄLJ" else "KÖP")}
+                }}){Text(if(glow.equipped==true)"VALD" else if(glow.owned)"VÄLJ" else "KÖP")}
             }
         }
         item{OutlinedButton(enabled=!busy&&state.equippedGlow!=null,onClick={scope.launch{busy=true;runCatching{api.equipEventGlow("none")}.onSuccess{reload();message="Glow avstängd."};busy=false}},modifier=Modifier.fillMaxWidth()){Text("INGEN GLOW")}}

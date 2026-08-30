@@ -160,7 +160,7 @@ private inline fun <reified T> decodeRpcObject(raw:String):T {
 )
 @Serializable data class PoiSettings(@SerialName("show_dog_parks") val showDogParks:Boolean=true,@SerialName("show_pet_shops") val showPetShops:Boolean=true,@SerialName("show_vets") val showVets:Boolean=true,@SerialName("show_grooming") val showGrooming:Boolean=true)
 @Serializable data class EventToy(val id:String,@SerialName("toy_type") val toyType:Int,val latitude:Double,val longitude:Double)
-@Serializable data class EventGlow(@SerialName("color_id") val colorId:String,val owned:Boolean=false,val equipped:Boolean=false)
+@Serializable data class EventGlow(@SerialName("color_id") val colorId:String,val owned:Boolean=false,val equipped:Boolean?=false)
 @Serializable data class FrasseEventState(
     val active:Boolean=false,@SerialName("event_id") val eventId:String?=null,val title:String="FRASSE HAR RYMT!",
     val story:String="",@SerialName("ends_at") val endsAt:String?=null,@SerialName("event_day") val eventDay:String?=null,
