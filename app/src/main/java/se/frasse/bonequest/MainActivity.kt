@@ -35,6 +35,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -163,7 +164,8 @@ internal fun GameScreen(profile:SessionBootstrap) {
     var activeDog by remember { mutableStateOf<DogProfile?>(null) }
     var activeDogInfo by remember { mutableStateOf<DogProfile?>(null) }
     var treasureResult by remember { mutableStateOf<TreasureClaimResult?>(null) }
-    var dogCardCollapsed by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val dogCardPrefs=remember(profile.playerId){context.getSharedPreferences("fbq_ui",Context.MODE_PRIVATE)}
+    var dogCardCollapsed by remember(profile.playerId) { mutableStateOf(dogCardPrefs.getBoolean("dog_card_collapsed_${profile.playerId}",false)) }
     var pendingPuppyName by remember { mutableStateOf("Valpen") }
     var pileReelBone by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -663,7 +665,10 @@ internal fun GameScreen(profile:SessionBootstrap) {
             )
 
             activeDog?.let { dog ->
-                ActiveDogHudCard(dog,dogCardCollapsed,{dogCardCollapsed=!dogCardCollapsed},{activeDogInfo=dog},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=102.dp,end=6.dp).zIndex(4f))
+                ActiveDogHudCard(dog,dogCardCollapsed,{
+                    dogCardCollapsed=!dogCardCollapsed
+                    dogCardPrefs.edit().putBoolean("dog_card_collapsed_${profile.playerId}",dogCardCollapsed).apply()
+                },{activeDogInfo=dog},Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=104.dp,end=6.dp).zIndex(4f))
             }
 
             if(!isOnline) Surface(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top=126.dp).zIndex(6f),color=androidx.compose.ui.graphics.Color(0xE5A52222),shape=RoundedCornerShape(4.dp)){
@@ -1053,31 +1058,53 @@ private fun timeUntilRefresh(updatedAt:String,hours:Long=10):String=runCatching{
                 },
             horizontalAlignment=Alignment.CenterHorizontally
         ){
-            Box(Modifier.weight(1f).fillMaxWidth().padding(start=5.dp,end=5.dp,top=5.dp),contentAlignment=Alignment.Center){
+            Box(Modifier.weight(1f).fillMaxWidth().padding(start=5.dp,end=5.dp,top=5.dp).clickable(onClick=onInfo),contentAlignment=Alignment.Center){
                 if(dogRes!=0)Image(painterResource(dogRes),dog.name,Modifier.fillMaxSize(),contentScale=ContentScale.Fit)
             }
             Text(dog.name,Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=2.dp),color=ink,fontSize=11.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center,maxLines=1,overflow=TextOverflow.Ellipsis)
             Text("${"%.1f".format(dog.distanceMeters/1000.0)} / ${dog.developmentKm} km · Level ${dog.stage.coerceAtLeast(1)}",Modifier.fillMaxWidth().padding(start=3.dp,end=3.dp,bottom=4.dp),color=ink,fontSize=8.sp,textAlign=TextAlign.Center,maxLines=1)
         }
         Box(
-            Modifier.width(46.dp).height(24.dp)
-                .background(parchment,RoundedCornerShape(bottomStart=9.dp))
-                .drawBehind{drawLine(frame,androidx.compose.ui.geometry.Offset.Zero,androidx.compose.ui.geometry.Offset(size.width,0f),2.dp.toPx())}
+            Modifier.width(64.dp).height(29.dp)
+                .background(frame,RoundedCornerShape(bottomStart=10.dp,bottomEnd=3.dp))
+                .padding(start=2.dp,end=2.dp,bottom=2.dp)
+                .background(gold,RoundedCornerShape(bottomStart=8.dp,bottomEnd=2.dp))
                 .clickable(onClick=onToggle),
             contentAlignment=Alignment.Center
-        ){Text(if(collapsed)"▼" else "▲",color=ink,fontSize=11.sp,fontWeight=FontWeight.Black)}
+        ){Text(if(collapsed)"🐾  ÖPPNA" else "🐾  STÄNG",color=ink,fontSize=8.sp,fontWeight=FontWeight.Black,maxLines=1)}
     }
 }
 
 @Composable private fun ActiveDogInfoDialog(dog:DogProfile,onClose:()->Unit){
     val context=LocalContext.current
     val dogRes=dogDrawableForInfo(context,dog.breed,dog.stage)
-    AlertDialog(onDismissRequest=onClose,title={Text("${dog.name} ${if(dog.gender=="female")"♀" else "♂"}",fontWeight=FontWeight.Black)},text={Column(Modifier.fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(7.dp)){
-        if(dogRes!=0)Image(painterResource(dogRes),dog.name,Modifier.size(150.dp),contentScale=ContentScale.Fit)
-        Text("Level ${dog.stage.coerceAtLeast(1)} · ${if(dog.isPuppy)"Valp" else "Vuxen hund"}",fontWeight=FontWeight.Bold)
-        Text("Tillväxt: ${"%.2f".format(dog.distanceMeters/1000.0)} / ${dog.developmentKm} km")
-        dog.foundArea?.let{Text("Hittad: $it",fontSize=12.sp)}
-        if(dog.stage>=5){listOfNotNull(dog.perkPrimary?.let{it to (dog.perkPrimaryLevel?:1)},dog.perkSecondary?.let{it to (dog.perkSecondaryLevel?:1)}).forEach{(id,level)->val perk=dogPerkInfo(id,level);Column(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFF252C2F),RoundedCornerShape(6.dp)).padding(8.dp)){Text("${perk.name} · nivå $level",fontWeight=FontWeight.Black,color=androidx.compose.ui.graphics.Color(0xFFFFC85B));Text(perk.description,fontSize=12.sp);Text("Aktuell bonus: ${perk.bonus}",fontSize=12.sp,fontWeight=FontWeight.Bold)}}}else Text("Perks avslöjas när hunden blir vuxen.",fontSize=12.sp)
+    val breeds=listOf("Labrador retriever","Goldendoodle","Tysk schäfer","Fransk bulldogg","Beagle","Rottweiler","Pudel (stor)","Siberian husky","Border collie","Tax (korthårig)")
+    val walkedKm=dog.distanceMeters/1000.0;val progress=(dog.distanceMeters/(dog.developmentKm*1000.0)).coerceIn(0.0,1.0)
+    val remaining=(dog.developmentKm-walkedKm).coerceAtLeast(0.0);val rewards=when(dog.developmentKm){20->intArrayOf(2,5,8,12,23);25->intArrayOf(3,7,12,18,35);else->intArrayOf(4,10,16,25,45)}
+    val actualPerks=listOfNotNull(dog.perkPrimary?.let{it to (dog.perkPrimaryLevel?:1)},dog.perkSecondary?.let{it to (dog.perkSecondaryLevel?:1)})
+    AlertDialog(onDismissRequest=onClose,title={Text("${dog.name} ${if(dog.gender=="female")"♀" else "♂"} · ALLT OM HUNDEN",fontWeight=FontWeight.Black)},text={Column(
+        Modifier.fillMaxWidth().heightIn(max=560.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(9.dp)){
+        if(dogRes!=0)Image(painterResource(dogRes),dog.name,Modifier.size(170.dp),contentScale=ContentScale.Fit)
+        Text(breeds.getOrElse(dog.breed){"Hund"},fontSize=18.sp,fontWeight=FontWeight.Black,color=androidx.compose.ui.graphics.Color(0xFFFFC85B))
+        Column(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFF252C2F),RoundedCornerShape(7.dp)).padding(10.dp),verticalArrangement=Arrangement.spacedBy(3.dp)){
+            Text("Namn: ${dog.name}");Text("Kön: ${if(dog.gender=="female")"Tik ♀" else "Hane ♂"}");Text("Status: ${if(dog.isActive)"Aktiv hund" else "Inte aktiv"} · ${if(dog.isPuppy)"Valp" else "Vuxen"}")
+            Text("Utvecklingsnivå: ${dog.stage.coerceIn(0,5)} av 5",fontWeight=FontWeight.Bold);Text("Tränings-XP: ${dog.distanceMeters} (1 godkänd meter = 1)")
+            Text("Promenad: ${"%.2f".format(walkedKm)} / ${dog.developmentKm} km");Text("Kvar till vuxen: ${"%.2f".format(remaining)} km · ${(progress*100).toInt()} % klart")
+            dog.foundArea?.let{Text("Hittad: $it")};Text("Hittad datum: ${dog.foundAt.take(10)}");dog.renamedAt?.let{Text("Senast omdöpt: ${it.take(10)}")}
+        }
+        Text("UTVECKLING OCH BELÖNINGAR",Modifier.fillMaxWidth(),fontWeight=FontWeight.Black,color=androidx.compose.ui.graphics.Color(0xFFFFC85B))
+        (1..5).forEach{level->val km=dog.developmentKm*level/5.0;Text("Nivå $level vid ${"%.1f".format(km)} km · +${rewards[level-1]} ben${if(dog.stage>=level)"  ✓" else ""}",Modifier.fillMaxWidth(),fontSize=12.sp)}
+        Text("HUNDENS PERKS",Modifier.fillMaxWidth(),fontWeight=FontWeight.Black,color=androidx.compose.ui.graphics.Color(0xFFFFC85B))
+        if(dog.stage>=5&&actualPerks.isNotEmpty())actualPerks.forEach{(id,level)->val perk=dogPerkInfo(id,level);Column(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFF3B321D),RoundedCornerShape(7.dp)).padding(9.dp)){Text("AKTIV: ${perk.name} · nivå $level",fontWeight=FontWeight.Black,color=androidx.compose.ui.graphics.Color(0xFFFFC85B));Text(perk.description,fontSize=12.sp);Text("Din bonus: ${perk.bonus}",fontSize=12.sp,fontWeight=FontWeight.Bold)}}
+        else {Text("Huvudperken avslöjas när hunden blir vuxen. Alla tio perks har exakt 10 % chans.",Modifier.fillMaxWidth(),fontSize=12.sp);if(dog.visiblePerks.isNotEmpty())Text("Ledtrådar just nu: ${dog.visiblePerks.joinToString{dogPerkInfo(it,1).name}}",Modifier.fillMaxWidth(),fontSize=12.sp)}
+        Text("Extra perk: 5 % chans totalt. Om den kommer väljs en annan perk än huvudperken. Kön och ras påverkar inte chanserna.",Modifier.fillMaxWidth(),fontSize=12.sp,fontWeight=FontWeight.Bold)
+        (0..9).forEach{id->val perk=dogPerkInfo(id,1);Column(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFF252C2F),RoundedCornerShape(6.dp)).padding(8.dp)){Text("${perk.name} · 10 % huvudchans",fontWeight=FontWeight.Black,color=androidx.compose.ui.graphics.Color(0xFF73DCD4));Text(perk.description,fontSize=11.sp);Text((1..5).joinToString("  ·  "){lvl->"N$lvl: ${dogPerkInfo(id,lvl).bonus}"},fontSize=10.sp)}}
+        Text("PERKNIVÅ – CHANSER FRÅN JORDHÖGEN",Modifier.fillMaxWidth(),fontWeight=FontWeight.Black,color=androidx.compose.ui.graphics.Color(0xFFFFC85B))
+        listOf("10-ben" to "55 / 25 / 12 / 6 / 2 %","25-ben" to "40 / 30 / 17 / 9 / 4 %","50-ben" to "25 / 30 / 25 / 14 / 6 %","100-ben" to "15 / 25 / 30 / 20 / 10 %","250-ben" to "10 / 20 / 25 / 25 / 20 %").forEach{(pile,odds)->Text("$pile-hög · nivå 1–5: $odds",Modifier.fillMaxWidth(),fontSize=11.sp)}
+        Text("VALP OCH UTVECKLINGSMÅL",Modifier.fillMaxWidth(),fontWeight=FontWeight.Black,color=androidx.compose.ui.graphics.Color(0xFFFFC85B))
+        Text("Valpchans från varje öppnad jordhög: 50 %. Kön och ras väljs oberoende av perkchanserna.",Modifier.fillMaxWidth(),fontSize=11.sp)
+        listOf("10-ben" to "20 km 50 % · 25 km 30 % · 30 km 20 %","25-ben" to "20 km 45 % · 25 km 30 % · 30 km 25 %","50-ben" to "20 km 40 % · 25 km 30 % · 30 km 30 %","100-ben" to "20 km 35 % · 25 km 30 % · 30 km 35 %","250-ben" to "20 km 30 % · 25 km 30 % · 30 km 40 %").forEach{(pile,odds)->Text("$pile-hög · $odds",Modifier.fillMaxWidth(),fontSize=11.sp)}
+        Text("Tekniskt hund-ID: ${dog.id}",Modifier.fillMaxWidth(),fontSize=9.sp,color=androidx.compose.ui.graphics.Color.Gray)
     }},confirmButton={Button(onClick=onClose){Text("STÄNG")}})
 }
 
